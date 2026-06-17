@@ -343,7 +343,7 @@
           <circle cx="8" cy="8" r="1.8" fill="white"/>
         </svg>
       </span>
-      聚思
+      聚思<span id="boardName" style="color:rgba(255,255,255,.4);font-weight:400;font-size:12px;margin-left:2px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
     </div>
     <div class="spacer"></div>
     <div class="actions">
@@ -1384,11 +1384,12 @@
     buildScene();persistLocalOnly();updateDriveBtn();updateInboxLink();
     showBanner('已載入白板「'+fileName.replace(/\.json$/,'')+'」');}
 
-  function updateDriveBtn(){const lbl=$('driveBtnLbl'),av=$('driveAvatar'),img=$('driveAvatarImg'),ci=$('driveCloudIcon');
-    if(gdReady()&&gdUser){lbl.textContent=gdCurrentFileName?gdCurrentFileName.replace(/\.json$/,''):'Drive';
+  function updateDriveBtn(){const lbl=$('driveBtnLbl'),av=$('driveAvatar'),img=$('driveAvatarImg'),ci=$('driveCloudIcon'),bn=$('boardName');
+    if(gdReady()&&gdUser){const name=gdCurrentFileName?gdCurrentFileName.replace(/\.json$/,''):'';
+      lbl.textContent=name||'Drive';if(bn)bn.textContent=name?'· '+name:'';
       if(gdUser.picture){av.style.display='block';img.src=gdUser.picture;if(ci)ci.style.display='none';}
       else{av.style.display='none';if(ci)ci.style.display='';}
-    }else{lbl.textContent='Drive';av.style.display='none';if(ci)ci.style.display='';}}
+    }else{lbl.textContent='Drive';av.style.display='none';if(ci)ci.style.display='';if(bn)bn.textContent='';}}
 
   async function renderDriveModal(){
     const login=$('drvLogin'),loggedIn=$('drvLoggedIn');
