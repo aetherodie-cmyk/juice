@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>聚思 · 我的白板</title>
+<title>聚思</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%238B0D12'/><text x='16' y='23' font-family='sans-serif' font-size='18' font-weight='bold' text-anchor='middle' fill='white'>聚</text></svg>">
 <script src="https://accounts.google.com/gsi/client" async></script>
 <style>
   :root{
@@ -1387,9 +1388,10 @@
   function updateDriveBtn(){const lbl=$('driveBtnLbl'),av=$('driveAvatar'),img=$('driveAvatarImg'),ci=$('driveCloudIcon'),bn=$('boardName');
     if(gdReady()&&gdUser){const name=gdCurrentFileName?gdCurrentFileName.replace(/\.json$/,''):'';
       lbl.textContent=name||'Drive';if(bn)bn.textContent=name?'· '+name:'';
+      document.title=name?name+' · 聚思':'聚思';
       if(gdUser.picture){av.style.display='block';img.src=gdUser.picture;if(ci)ci.style.display='none';}
       else{av.style.display='none';if(ci)ci.style.display='';}
-    }else{lbl.textContent='Drive';av.style.display='none';if(ci)ci.style.display='';if(bn)bn.textContent='';}}
+    }else{lbl.textContent='Drive';av.style.display='none';if(ci)ci.style.display='';if(bn)bn.textContent='';document.title='聚思';}}
 
   async function renderDriveModal(){
     const login=$('drvLogin'),loggedIn=$('drvLoggedIn');
