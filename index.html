@@ -331,6 +331,8 @@
   .ib-foot button{border:none;background:var(--accent);color:#fff;border-radius:9px;padding:8px 18px;font-size:13px;cursor:pointer;}
   .ib-foot button:hover{background:#3F55C4;}
   input[type=file]{display:none;}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .saving #saveNowIcon{animation:spin .8s linear infinite;}
   @media (max-width:560px){ .brand small{display:none;} button.tb{padding:6px 8px;} #panel{width:100%;} }
 </style>
 </head>
@@ -386,6 +388,10 @@
         <svg id="driveCloudIcon" viewBox="0 0 16 16"><path d="M12.5,10.5 a3,3 0 0,0 0-6 0.5,0.5 0 0,0 -0.1,0 A4,4 0 1,0 4.8,9.3 A2.5,2.5 0 0,0 4.5,10.5 Z"/></svg>
         <span id="driveBtnLbl">Drive</span>
       </button>
+      <button class="tb icon" id="btnSaveNow" data-tip="立即儲存到 Drive" style="display:none">
+        <svg id="saveNowIcon" viewBox="0 0 16 16"><polyline points="8,10 8,3"/><polyline points="5,6 8,3 11,6"/><path d="M3,11 Q3,13 5,13 L11,13 Q13,13 13,11"/></svg>
+      </button>
+      <span id="saveStatus" style="font-size:11px;color:rgba(255,255,255,.35);min-width:60px;display:none"></span>
       <div class="divider"></div>
       <button class="tb icon" id="btnZoomOut" data-tip="縮小">
         <svg viewBox="0 0 16 16"><line x1="4" y1="8" x2="12" y2="8"/></svg>
@@ -1429,6 +1435,34 @@
   const _origSave=save;
   // patch scheduleSave 讓 Drive 也跟著寫
   const _origScheduleSave=scheduleSave;
+
+  // ── Drive 儲存狀態 ──
+  let gdLastSavedAt=null, saveStatusTimer=null;
+  function fmtAgo(ts){if(!ts)return '';const s=Math.floor((Date.now()-ts)/1000);
+    if(s<10)return '剛剛儲存';if(s<60)return s+'秒前儲存';
+    const m=Math.floor(s/60);if(m<60)return m+'分鐘前儲存';
+    const h=Math.floor(m/60);return h+'小時前儲存';}
+  function updateSaveStatus(){const el=$('saveStatus');if(!el)return;
+    if(!gdReady()||!gdCurrentFileId){el.style.display='none';$('btnSaveNow').style.display='none';return;}
+    el.style.display='';$('btnSaveNow').style.display='';
+    el.textContent=fmtAgo(gdLastSavedAt);}
+  function tickSaveStatus(){updateSaveStatus();saveStatusTimer=setTimeout(tickSaveStatus,30000);}
+
+  // patch gdWriteFile 記錄最後存檔時間
+  const _origGdWrite=gdWriteFile;
+  gdWriteFile=async function(){
+    $('btnSaveNow').classList.add('saving');
+    await _origGdWrite();
+    gdLastSavedAt=Date.now();
+    $('btnSaveNow').classList.remove('saving');
+    updateSaveStatus();};
+
+  $('btnSaveNow').addEventListener('click',async()=>{
+    if(!gdReady()||!gdCurrentFileId){showBanner('請先登入 Drive 並選取白板。');return;}
+    await gdWriteFile();showBanner('已儲存到 Drive ✓');});
+
+  // 每 30 秒更新「幾分鐘前」文字
+  tickSaveStatus();
 
   // ============ CROSS-DEVICE SYNC (linked JSON file via File System Access API) ============
   const FSA=!!(window.showOpenFilePicker&&window.showSaveFilePicker);
