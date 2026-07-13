@@ -100,6 +100,8 @@
   .card .cprev .pvcode{font-family:var(--mono);font-size:11.5px;background:var(--code-bg);border-radius:6px;padding:3px 7px;margin:3px 0;white-space:pre-wrap;}
   .card .cprev .pvhr{height:1px;background:var(--line);margin:7px 0;}
   .card .cprev .pvimg{max-width:100%;max-height:130px;border-radius:8px;margin:4px 0;display:block;}
+  .card .cprev .pvmore{display:block;width:100%;margin-top:8px;padding:5px 8px;border:1px dashed var(--accent);border-radius:7px;background:rgba(255,255,255,.58);color:var(--accent);font:inherit;font-size:11.5px;text-align:left;cursor:pointer;}
+  .card .cprev .pvmore:hover{background:var(--accent-soft);}
   .card .ctags{margin-top:9px;display:flex;gap:5px;flex-wrap:wrap;}
   .card .ctag{font-size:11px;background:rgba(28,33,48,.06);color:var(--ink-soft);padding:1px 8px;border-radius:7px;}
   .handle{position:absolute;width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid var(--accent);right:-9px;top:50%;
@@ -651,10 +653,13 @@
     el.querySelector('.ccaret').addEventListener('pointerdown',e=>{e.stopPropagation();e.preventDefault();c.collapsed=!c.collapsed;renderTile(c);refreshLinksFor(c.id);scheduleSave();});
     el.querySelector('.handle').addEventListener('pointerdown',e=>onHandleDown(e,c));
     el.querySelector('.expand').addEventListener('pointerdown',e=>{e.stopPropagation();e.preventDefault();openPanel(c);});return el;}
-  function blocksPreviewHTML(blocks){let out='',num=0,n=0;
-    for(const b of blocks||[]){ if(n>=14)break;
+  const MAX_PREVIEW_BLOCKS=14;
+  function blocksPreviewHTML(blocks){let out='',num=0,n=0,hidden=0;
+    for(const b of blocks||[]){
       const editable=b.type!=='divider'&&b.type!=='image';
       if(editable&&!plainText(b.html).trim())continue;
+      if(b.type==='image'&&!b.src)continue;
+      if(n>=MAX_PREVIEW_BLOCKS){hidden++;continue;}
       if(b.type!=='number')num=0;const txt=b.html||'';
       if(b.type==='h1')out+='<div class="pvh1">'+txt+'</div>';
       else if(b.type==='h2')out+='<div class="pvh2">'+txt+'</div>';
@@ -669,10 +674,10 @@
       else if(b.type==='image')out+=(b.src?'<img class="pvimg" src="'+b.src+'">':'');
       else out+='<div>'+txt+'</div>';
       n++;}
-    return out;}
+    return {html:out,hidden};}
   function renderTile(c){const el=cardEls.get(c.id);if(!el)return;
     const tt=el.querySelector('.ctitle'),pv=el.querySelector('.cprev'),tg=el.querySelector('.ctags'),caret=el.querySelector('.ccaret');
-    const lbl=cardLabel(c),prev=blocksPreviewHTML(c.blocks);
+    const lbl=cardLabel(c),preview=blocksPreviewHTML(c.blocks),prev=preview.html;
     const hasContent=!!prev||(c.tags&&c.tags.length>0);
     caret.style.display=hasContent?'':'none';caret.textContent=c.collapsed?'▸':'▾';
     if(c.collapsed){tt.style.display='';tt.classList.toggle('empty',lbl.faint);tt.textContent=lbl.text;
@@ -682,6 +687,8 @@
       if(prev){pv.style.display='';pv.innerHTML=prev;}else{pv.style.display='none';pv.innerHTML='';}}
     else if(prev){tt.style.display='none';pv.style.display='';pv.innerHTML=prev;}
     else{tt.style.display='';tt.classList.add('empty');tt.textContent='未命名卡片';pv.style.display='none';pv.innerHTML='';}
+    if(prev&&preview.hidden){const more=document.createElement('button');more.type='button';more.className='pvmore';more.textContent='還有 '+preview.hidden+' 個區塊未顯示 · 點此展開';
+      more.addEventListener('pointerdown',e=>{e.stopPropagation();e.preventDefault();openPanel(c);});pv.appendChild(more);}
     tg.innerHTML='';
     (c.tags||[]).forEach(t=>{const s=document.createElement('span');s.className='ctag';s.textContent='#'+t;tg.appendChild(s);});
     tg.style.display=(c.tags&&c.tags.length)?'':'none';}
