@@ -159,11 +159,42 @@ test('marquee selects multiple cards and dragging moves them together',async({pa
 });
 test('Shift drag supports reverse selection and adding to the selection',async({page})=>{
   await selectionBoard(page);await page.keyboard.down('Shift');await rectangle(page,350,300,80,132);await page.keyboard.up('Shift');await expect(page.locator('.card.sel')).toHaveCount(1);
-  await page.keyboard.down('Shift');await rectangle(page,380,132,660,300);await page.keyboard.up('Shift');await expect(page.locator('.card.sel')).toHaveCount(2);await expect(page.locator('#btnSelect')).toHaveAttribute('aria-pressed','false');
+  await page.keyboard.down('Shift');await rectangle(page,380,300,660,145);await page.keyboard.up('Shift');await expect(page.locator('.card.sel')).toHaveCount(2);await expect(page.locator('#btnSelect')).toHaveAttribute('aria-pressed','false');
 });
 test('marquee works after pan and zoom, empty click clears selection',async({page})=>{
   await selectionBoard(page,{x:50,y:40,zoom:0.5});await page.locator('#btnSelect').click();await rectangle(page,90,132,380,210);await expect(page.locator('.card.sel')).toHaveCount(2);await page.mouse.click(700,350);await expect(page.locator('.card.sel')).toHaveCount(0);await expect(page.locator('#selectionBox')).toBeHidden();
 });
 test('Escape cancels the current rectangle and restores previous selection',async({page})=>{
   await selectionBoard(page);await page.locator('#btnSelect').click();await rectangle(page,80,132,350,300);await expect(page.locator('.card.sel')).toHaveCount(1);await page.mouse.move(700,350);await page.mouse.down();await page.mouse.move(1100,600);await page.keyboard.press('Escape');await page.mouse.up();await expect(page.locator('.card.sel')).toHaveCount(1);await expect(page.locator('#selectionBox')).toBeHidden();
+});
+
+async function selectFirstTwo(page){await page.locator('#btnSelect').click();await rectangle(page,80,132,660,300);await expect(page.locator('.card.sel')).toHaveCount(2);}
+test('duplicate preserves rich content, remaps IDs and only copies internal links',async({page})=>{
+  await mockDrive(page);await page.addInitScript(()=>localStorage.setItem('sju-whiteboard-v2',JSON.stringify({cards:[{id:'one',x:100,y:100,title:'One',color:'sage',shape:'rect',tags:['test'],sourceInbox:'drive:inbox:one',blocks:[{id:'b1',type:'todo',html:'<b>Task</b>',checked:true},{id:'b2',type:'text',html:'Text'}]},{id:'two',x:400,y:100,title:'Two'},{id:'three',x:800,y:400,title:'Three'}],links:[{id:'l1',from:'one',to:'two',dir:'to',label:'internal'},{id:'l2',from:'one',to:'three',dir:'none',label:'external'}]})));await boot(page);await selectFirstTwo(page);await page.locator('#btnDuplicate').click();await expect(page.locator('.card')).toHaveCount(5);await expect(page.locator('.card.sel')).toHaveCount(2);await page.waitForTimeout(500);
+  const data=await stored(page),a=data.cards[3],b=data.cards[4];expect(a).toMatchObject({title:'One',color:'sage',shape:'rect',tags:['test'],x:132,y:132});expect(a.sourceInbox).toBeUndefined();expect(a.blocks[0]).toMatchObject({type:'todo',html:'<b>Task</b>',checked:true});expect(a.id).not.toBe('one');expect(a.blocks[0].id).not.toBe('b1');expect(data.links).toHaveLength(3);expect(data.links[2]).toMatchObject({from:a.id,to:b.id,label:'internal',dir:'to'});
+  await page.locator('#btnUndo').click();await expect(page.locator('.card')).toHaveCount(3);await page.locator('#btnRedo').click();await expect(page.locator('.card')).toHaveCount(5);await page.waitForTimeout(500);expect((await stored(page)).cards[3].id).toBe(a.id);
+});
+test('batch move and delete each undo and redo in one step',async({page})=>{
+  await selectionBoard(page);await selectFirstTwo(page);await rectangle(page,140,177,200,217);await page.locator('#btnUndo').click();await page.waitForTimeout(500);expect((await stored(page)).cards.map(c=>[c.x,c.y])).toEqual([[100,100],[400,100],[800,400]]);
+  await page.locator('#btnRedo').click();await page.waitForTimeout(500);expect((await stored(page)).cards[0].x).toBe(160);await page.keyboard.press('Delete');await expect(page.locator('.card')).toHaveCount(1);await page.locator('#btnUndo').click();await expect(page.locator('.card')).toHaveCount(3);await expect(page.locator('.card.sel')).toHaveCount(2);await page.locator('#btnRedo').click();await expect(page.locator('.card')).toHaveCount(1);
+});
+test('new content action clears redo while pan and zoom do not create history',async({page})=>{
+  await selectionBoard(page);await rectangle(page,700,350,730,380);await page.locator('#btnZoomIn').click();await expect(page.locator('#btnUndo')).toBeDisabled();await page.locator('[data-id="one"].card').click();await page.locator('#btnDuplicate').click();await page.locator('#btnUndo').click();await expect(page.locator('#btnRedo')).toBeEnabled();await page.locator('#btnAdd').click();await expect(page.locator('#btnRedo')).toBeDisabled();
+});
+test('keyboard duplication and history shortcuts preserve normal text undo',async({page})=>{
+  await selectionBoard(page);await page.locator('[data-id="one"].card').click();await page.keyboard.press('Control+d');await expect(page.locator('.card')).toHaveCount(4);await page.keyboard.press('Control+z');await expect(page.locator('.card')).toHaveCount(3);await page.keyboard.press('Control+Shift+z');await expect(page.locator('.card')).toHaveCount(4);
+  await page.locator('#btnAdd').click();await page.locator('#pTitle').pressSequentially('Typing');await page.locator('#pTitle').press((process.platform==='darwin'?'Meta':'Control')+'+z');await expect(page.locator('#pTitle')).not.toHaveValue('Typing');await expect(page.locator('.card')).toHaveCount(5);
+});
+test('history resets when importing another board',async({page})=>{
+  await selectionBoard(page);await page.locator('[data-id="one"].card').click();await page.locator('#btnDuplicate').click();await expect(page.locator('#btnUndo')).toBeEnabled();await page.locator('#fileInput').setInputFiles({name:'other.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(empty('Other board')))});await expect(page.locator('#banner')).toContainText('已匯入');await expect(page.locator('#btnUndo')).toBeDisabled();await expect(page.locator('#btnRedo')).toBeDisabled();
+});
+test('undo duplication persists to Drive',async({page})=>{
+  const api=await mockDrive(page);await boot(page);await openBoard(page);await page.locator('.card').click();await page.locator('#btnDuplicate').click();await page.locator('#btnSaveNow').click();await expect(page.locator('#saveStatus')).toHaveText('剛剛儲存');expect(JSON.parse(api.files.a).cards).toHaveLength(2);await page.locator('#btnUndo').click();await page.locator('#btnSaveNow').click();await expect(page.locator('#saveStatus')).toHaveText('剛剛儲存');expect(JSON.parse(api.files.a).cards).toHaveLength(1);
+});
+
+test('continuous title typing is one board undo step',async({page})=>{
+  await mockDrive(page);await boot(page);await page.locator('#btnAdd').click();await page.locator('#pTitle').pressSequentially('Continuous title');await page.locator('#btnUndo').click();await expect(page.locator('.card')).toHaveCount(1);await expect(page.locator('#pTitle')).toHaveValue('');await page.locator('#btnUndo').click();await expect(page.locator('.card')).toHaveCount(0);await page.locator('#btnRedo').click();await expect(page.locator('.card')).toHaveCount(1);await page.locator('#btnRedo').click();await expect(page.locator('.ctitle')).toHaveText('Continuous title');
+});
+test('undo deletion restores card content and connecting links together',async({page})=>{
+  await mockDrive(page);await page.addInitScript(()=>localStorage.setItem('sju-whiteboard-v2',JSON.stringify({cards:[{id:'one',x:100,y:100,title:'One'},{id:'two',x:400,y:100,title:'Two'}],links:[{id:'link',from:'one',to:'two',label:'keep connection',dir:'both'}]})));await boot(page);await page.locator('[data-id="one"].card').click();await page.keyboard.press('Delete');await expect(page.locator('.card')).toHaveCount(1);await page.locator('#btnUndo').click();await expect(page.locator('.card')).toHaveCount(2);await page.waitForTimeout(500);expect((await stored(page)).links).toEqual([{id:'link',from:'one',to:'two',dir:'both',label:'keep connection'}]);
 });

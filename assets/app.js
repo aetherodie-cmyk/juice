@@ -65,12 +65,46 @@
     for(const b of c.blocks||[]){const p=plainText(b.html).trim();if(p)return {text:p.slice(0,28),faint:false};}
     return {text:'未命名卡片',faint:true};}
 
+  // Session history tracks board content, not viewport or remote side effects.
+  const HISTORY_LIMIT=50,HISTORY_BYTES=16*1024*1024;
+  let historyPast=[],historyFuture=[],historyHead='',historyRestoring=false;
+  const historyContent=()=>JSON.stringify({cards:state.cards,links:state.links,groups:state.groups,images:state.images});
+  function updateHistoryButtons(){$('btnUndo').disabled=!historyPast.length||loadFailed;$('btnRedo').disabled=!historyFuture.length||loadFailed;}
+  function resetHistory(){historyPast=[];historyFuture=[];historyHead=historyContent();updateHistoryButtons();}
+  function captureHistory(key=null){
+    if(historyRestoring)return;const content=historyContent();if(content===historyHead)return;
+    const previous=historyPast.at(-1),time=now();
+    if(key&&previous?.key===key&&time-previous.at<1000&&!historyFuture.length){previous.after=content;previous.at=time;}
+    else historyPast.push({before:historyHead,after:content,key,at:time});
+    historyHead=content;historyFuture=[];
+    let bytes=historyPast.reduce((sum,item)=>sum+2*(item.before.length+item.after.length),0);
+    while(historyPast.length>HISTORY_LIMIT||bytes>HISTORY_BYTES){const item=historyPast.shift();bytes-=2*(item.before.length+item.after.length);}
+    updateHistoryButtons();
+  }
+  function restoreHistory(redo=false){
+    if(loadFailed||transitioning||inboxBusy||drag||gdrag||idrag||iresz||marquee||linking)return;
+    const from=redo?historyFuture:historyPast,to=redo?historyPast:historyFuture,item=from.pop();if(!item)return;
+    const previousIds=new Set(state.cards.map(c=>c.id)),selected=[...selection],open=openCardId;
+    const content=redo?item.after:item.before;
+    historyRestoring=true;
+    try{
+      Object.assign(state,JSON.parse(content));historyHead=content;to.push(item);
+      closePanel();clearSelection();buildScene();
+      const wanted=state.cards.filter(c=>selected.includes(c.id)||!previousIds.has(c.id));wanted.forEach(c=>selectCard(c.id,true));
+      if(open&&wanted.length<=1){const card=byId(state.cards,open);if(card)openPanel(card);}
+      scheduleSave();idleStatus();
+    }finally{historyRestoring=false;updateHistoryButtons();}
+  }
+  $('btnUndo').addEventListener('click',()=>restoreHistory());
+  $('btnRedo').addEventListener('click',()=>restoreHistory(true));
+
   // ---------- storage ----------
   let saveTimer=null, editVersion=0, gdDirty=false, fileDirty=false, transitioning=false;
   let localSaved=true;
   const reportError=e=>showBanner(e.message||'操作失敗，請重試');
-  const scheduleSave=()=>{
+  const scheduleSave=(historyKey=null)=>{
     if(loadFailed){showBanner('請先下載原始資料備份後重新開啟白板');return;}
+    captureHistory(historyKey);
     editVersion++;gdDirty=!!gdCurrentFileId||gdDirty;fileDirty=!!syncHandle||fileDirty;
     clearTimeout(saveTimer);saveTimer=setTimeout(()=>{saveTimer=null;save();},350);updateSaveStatus();
   };
@@ -110,7 +144,7 @@
     try{await Core.backup(state,'刪除前白板');action();}catch(e){reportError(e);}
     finally{transitioning=false;document.body.inert=false;}
   }
-  function resetScene(){closePanel();selection.clear();selectedLink=null;selectedImage=null;selectedGroup=null;buildScene();persistLocalOnly();idleStatus();}
+  function resetScene(){resetHistory();closePanel();selection.clear();selectedLink=null;selectedImage=null;selectedGroup=null;buildScene();persistLocalOnly();idleStatus();}
   function downloadJSON(name,value){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([typeof value==='string'?value:JSON.stringify(value,null,2)],{type:'application/json'}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
   window.addEventListener('beforeunload',e=>{if(saveTimer&&!loadFailed)save();if(gdDirty||fileDirty||!localSaved){e.preventDefault();e.returnValue='';}});
   document.addEventListener('visibilitychange',()=>{if(document.hidden&&saveTimer&&!loadFailed)save();});
@@ -225,7 +259,7 @@
     if(openCardId)renderConn(curCard());scheduleSave();}
   $('linkbar').querySelectorAll('.dirb').forEach(btn=>btn.addEventListener('click',()=>{const l=byId(state.links,selectedLink);if(!l)return;l.dir=btn.dataset.dir;applyLinkDir(l);
     $('linkbar').querySelectorAll('.dirb').forEach(b=>b.classList.toggle('on',b===btn));scheduleSave();}));
-  $('linkbar').querySelector('.lbl').addEventListener('input',function(){const l=byId(state.links,selectedLink);if(!l)return;l.label=this.value;updateOneLink(l);scheduleSave();});
+  $('linkbar').querySelector('.lbl').addEventListener('input',function(){const l=byId(state.links,selectedLink);if(!l)return;l.label=this.value;updateOneLink(l);scheduleSave('link:'+l.id);});
   $('linkDel').addEventListener('click',()=>{if(selectedLink)deleteLink(selectedLink);});
 
   // ---------- groups ----------
@@ -243,7 +277,23 @@
     selection.add(id);cardEls.get(id)?.classList.add('sel');selectGroup(null);showCardbar();updateGroupBtn();}
   function selectGroup(id){if(selectedGroup)groupEls.get(selectedGroup)?.classList.remove('sel');selectedGroup=id;
     if(id){deselectLink();groupEls.get(id)?.classList.add('sel');selection.forEach(x=>cardEls.get(x)?.classList.remove('sel'));selection.clear();hideCardbar();updateGroupBtn();}}
-  const updateGroupBtn=()=>{$('btnGroup').disabled=selection.size<2;};
+  const updateGroupBtn=()=>{$('btnGroup').disabled=selection.size<2;$('btnDuplicate').disabled=!selection.size;};
+
+  function duplicateSelection(){
+    if(loadFailed||transitioning||inboxBusy||drag||marquee)return;
+    const originals=state.cards.filter(c=>selection.has(c.id));if(!originals.length)return;
+    if(state.cards.length+originals.length>10000){showBanner('卡片數量已達上限，請先整理白板');return;}
+    const ids=new Map(originals.map(c=>[c.id,uid()])),stamp=now();
+    const copies=originals.map(c=>{
+      const copy=structuredClone(c);copy.id=ids.get(c.id);copy.x+=32;copy.y+=32;copy.createdAt=stamp;copy.updatedAt=stamp;
+      copy.blocks.forEach(b=>b.id=uid());delete copy.sourceInbox;return copy;
+    });
+    const links=state.links.filter(l=>ids.has(l.from)&&ids.has(l.to)).map(l=>({...l,id:uid(),from:ids.get(l.from),to:ids.get(l.to)}));
+    if(state.links.length+links.length>30000){showBanner('連線數量已達上限，請先整理白板');return;}
+    closePanel();clearSelection();state.cards.push(...copies);state.links.push(...links);
+    copies.forEach(makeCardEl);links.forEach(makeLinkEl);refreshLinks();copies.forEach(c=>selectCard(c.id,true));updateHint();scheduleSave();
+  }
+  $('btnDuplicate').addEventListener('click',duplicateSelection);
 
   function buildCardbar(){cardbar.innerHTML='';
     COLOR_KEYS.forEach(k=>{const s=document.createElement('div');s.className='swatch';s.dataset.color=k;s.style.background=COLORS[k].bg;s.style.borderColor=COLORS[k].border;s.title=k;
@@ -251,6 +301,7 @@
     const vd=document.createElement('div');vd.className='vdiv';cardbar.appendChild(vd);
     const open=document.createElement('button');open.className='act';open.textContent='展開';
     open.addEventListener('pointerdown',e=>{e.stopPropagation();e.preventDefault();const id=[...selection][0];if(id)openPanel(byId(state.cards,id));});cardbar.appendChild(open);
+    const copy=document.createElement('button');copy.className='act';copy.textContent='複製';copy.addEventListener('pointerdown',e=>{e.stopPropagation();e.preventDefault();duplicateSelection();});cardbar.appendChild(copy);
     const del=document.createElement('button');del.className='act danger';del.textContent='刪除';
     del.addEventListener('pointerdown',e=>{e.stopPropagation();e.preventDefault();deleteSelection();});cardbar.appendChild(del);}
   function markSwatch(){const cs=[...selection].map(id=>byId(state.cards,id).color);const same=cs.every(c=>c===cs[0])?cs[0]:null;
@@ -287,7 +338,7 @@
   function closePanel(){closeMenu();panel.classList.remove('open');openCardId=null;}
   $('pClose').addEventListener('click',closePanel);
 
-  pTitle.addEventListener('input',()=>{const c=curCard();if(!c)return;c.title=pTitle.value;autoGrow(pTitle);renderTile(c);refreshLinksFor(c.id);touch(c);scheduleSave();});
+  pTitle.addEventListener('input',()=>{const c=curCard();if(!c)return;c.title=pTitle.value;autoGrow(pTitle);renderTile(c);refreshLinksFor(c.id);touch(c);scheduleSave('title:'+c.id);});
   pTitle.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();const el=$('pBlocks').querySelector('.blk .ed');if(el)placeCaretEnd(el);}});
 
   // ---- block editor ----
@@ -322,7 +373,7 @@
 
     const ed=document.createElement('div');ed.className='ed';ed.contentEditable='true';ed.dataset.ph=PLACE[b.type]||'';ed.innerHTML=b.html||'';
     main.appendChild(ed);
-    ed.addEventListener('input',()=>{b.html=stripScripts(ed.innerHTML);renderTile(c);refreshLinksFor(c.id);touch(c);scheduleSave();});
+    ed.addEventListener('input',()=>{b.html=stripScripts(ed.innerHTML);renderTile(c);refreshLinksFor(c.id);touch(c);scheduleSave('block:'+c.id+':'+b.id);});
     ed.addEventListener('keydown',e=>onBlockKey(e,c,b,ed));
     ed.addEventListener('paste',e=>onBlockPaste(e,c,b,ed));
     ed.addEventListener('drop',e=>{e.preventDefault();document.execCommand('insertText',false,e.dataTransfer?.getData('text/plain')||'');b.html=stripScripts(ed.innerHTML);renderTile(c);touch(c);scheduleSave();});
@@ -514,6 +565,10 @@
   window.addEventListener('keydown',e=>{const ae=document.activeElement;
     const typing=ae&&(ae.getAttribute('contenteditable')==='true'||ae.tagName==='INPUT'||ae.tagName==='TEXTAREA');
     if(typing){if(e.key==='Escape')ae.blur();return;}
+    const command=(e.metaKey||e.ctrlKey)&&!e.altKey,key=e.key.toLowerCase();
+    if(command&&key==='z'){e.preventDefault();restoreHistory(e.shiftKey);return;}
+    if(command&&key==='y'){e.preventDefault();restoreHistory(true);return;}
+    if(command&&key==='d'){e.preventDefault();duplicateSelection();return;}
     if(e.key==='Delete'||e.key==='Backspace'){if(selectedLink){e.preventDefault();deleteLink(selectedLink);}else if(selectedImage){e.preventDefault();deleteImage(selectedImage);}else if(selection.size||selectedGroup){e.preventDefault();deleteSelection();}}
     else if(e.key==='Escape'){if(marquee){finishMarquee(true);return;}if(selectMode){setSelectMode(false);clearSelection();return;}if($('mapModal').classList.contains('open'))closeMapModal();else if(activeMenu)closeMenu();else if($('tagPanel').classList.contains('open'))closeTagPanel();else if(panel.classList.contains('open'))closePanel();else clearSelection();}
     else if(e.key==='g'||e.key==='G'){if(selection.size>=2)makeGroup();}});
@@ -766,7 +821,7 @@
       if(drive){await gdFetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,{method:'PATCH',headers:{'Content-Type':'application/json',...(etag?{'If-Match':etag}:{})},body});}
       else{const w=await handle.createWritable();await w.write(body);await w.close();}
       inboxCards=remaining;
-    }catch(e){reportError(e);}finally{inboxBusy=false;document.body.inert=false;updateInboxBadge();renderInboxPanel();}
+    }catch(e){reportError(e);}finally{resetHistory();inboxBusy=false;document.body.inert=false;updateInboxBadge();renderInboxPanel();}
   });}
   const approveCard=card=>reviewCard(card,true);
   const rejectCard=id=>{const card=inboxCards.find(c=>c.id===id);return card?reviewCard(card,false):Promise.resolve();};
@@ -836,7 +891,7 @@
     client.requestAccessToken();
   }
   async function gdLogout(){await transition(async()=>{clearTimeout(gdRefreshTimer);gdToken=null;gdUser=null;gdFolderId=null;clearDriveBinding();updateDriveBtn();closeDriveModal();});}
-  function clearDriveBinding(){clearTimeout(gdWriteTimer);gdCurrentFileId=null;gdCurrentFileName=null;gdInboxFileId=null;gdBaseline=null;gdDirty=false;gdConflict=false;gdError='';gdLastSavedAt=null;inboxCards=[];updateInboxBadge();updateSaveStatus();}
+  function clearDriveBinding(){resetHistory();clearTimeout(gdWriteTimer);gdCurrentFileId=null;gdCurrentFileName=null;gdInboxFileId=null;gdBaseline=null;gdDirty=false;gdConflict=false;gdError='';gdLastSavedAt=null;inboxCards=[];updateInboxBadge();updateSaveStatus();}
   async function detachSources(){await unlinkSync();clearDriveBinding();updateDriveBtn();updateInboxLink();}
   async function gdList(q,fields='id,name'){
     const files=[];let pageToken='';
@@ -1035,7 +1090,7 @@
   }
 
   // ---------- init ----------
-  buildCardbar();load();buildScene();
+  buildCardbar();load();buildScene();resetHistory();
   if(!state.cards.length){state.view={x:40,y:40,zoom:1};applyView();}
   idleStatus();
   if(loadFailed){world.inert=true;panel.inert=true;}
