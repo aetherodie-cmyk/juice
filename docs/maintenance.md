@@ -27,6 +27,19 @@
 
 快照寫入失敗時，程式會停止可能覆蓋資料的操作。請先下載備份，再釋放網站儲存空間。
 
+## 開始畫面與本機白板清單
+
+`localStorage` 的 `sju-workspace-meta` 保存目前名稱／來源與 boardId，不包含 token。只有 meta.boardId 與目前白板一致才採用；上次的 Drive／檔案來源在重新整理後只恢復為 cache 標示，不自動重建同步綁定。
+
+IndexedDB `sju-sync` 的既有 `kv` store 新增：
+
+- `local-board:<boardId>`：具名本機白板的完整 state 與 meta。
+- `local-board-index`：名稱、boardId 與保存時間清單。
+
+`Core.storeLocalBoard` 以同一 readwrite transaction 保存白板與索引，背景寫入另經序列佇列。切換前等待保存完成；本機白板不受 recovery 的 20 筆上限影響。它們仍屬同一瀏覽器本機資料，並非異地備份。開始畫面的「匯出目前白板」與編輯工具列匯出均產生標準白板 JSON。
+
+首頁與 Drive API 測試使用 mock 驗證登入後列表、建立／開啟、重新整理後離線副本標示、具名本機白板切換、匯入與未同步內容保護；真實 OAuth 授權仍須以測試帳號人工驗證。
+
 ## 操作復原紀錄
 
 `assets/app.js` 的工作階段歷史以 `cards/links/groups/images` 作為內容快照；不納入 viewport、savedAt、帳號或同步目的地。所有一般保存操作透過 `scheduleSave` 比對內容並記錄，拖曳只在結束時記錄整批操作，文字 input 使用欄位 key 合併一秒內的連續輸入。復原會重建畫面、保存本機並排程同步，因此復原結果仍會寫回目前的 Drive／本機檔案，但不繞過原有遠端衝突檢查。

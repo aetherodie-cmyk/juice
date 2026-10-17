@@ -65,6 +65,93 @@
     for(const b of c.blocks||[]){const p=plainText(b.html).trim();if(p)return {text:p.slice(0,28),faint:false};}
     return {text:'未命名卡片',faint:true};}
 
+  // ---------- start screen / local board library ----------
+  const home=$('home'),workspaceQueue=Core.serial();
+  let workspaceMeta={kind:'local',name:'本機白板'},homeDriveRequest=0;
+  function currentWorkspace(){
+    if(gdCurrentFileId)return {kind:'drive',name:gdCurrentFileName.replace(/\.json$/,''),id:gdCurrentFileId,boardId:state.boardId};
+    if(syncHandle)return {kind:'file',name:syncHandle.name,boardId:state.boardId};
+    return {...workspaceMeta,boardId:state.boardId};
+  }
+  const workspaceTime=at=>at?new Date(at).toLocaleString():'尚未編輯';
+  function archiveLocalWorkspace(){
+    const meta=currentWorkspace();if(meta.kind!=='local'||loadFailed)return Promise.resolve();
+    const snapshot=structuredClone(state),record={meta:{...meta,boardId:snapshot.boardId},state:snapshot};
+    if(!snapshot.savedAt&&!snapshot.cards.length&&!snapshot.images.length&&!snapshot.groups.length)return Promise.resolve();
+    return workspaceQueue(()=>Core.storeLocalBoard(record));
+  }
+  function closeHome(){home.hidden=true;$('app').inert=false;$('btnHome').focus();}
+  function openHome(){
+    if(transitioning||inboxBusy)return;if(saveTimer)save();closeMenu();
+    home.hidden=false;$('app').inert=true;renderHome();$('homeContinue').focus();
+  }
+  function renderHome(){
+    const meta=currentWorkspace(),source=meta.kind==='drive'?(gdReady()?'Google Drive':'Google Drive（需重新登入）'):meta.kind==='file'?'本機同步檔':meta.kind==='cache'?'本機副本（重新登入並選取後才會同步）':'這個瀏覽器';
+    $('homeCurrentName').textContent=meta.name||'本機白板';$('homeEyebrow').textContent=state.cards.length||state.savedAt?'繼續上次編輯':'開始使用';
+    $('homeCurrentMeta').textContent=`${source} · ${state.cards.length} 張卡片 · ${workspaceTime(state.savedAt)}`;
+    $('homeContinue').textContent=state.cards.length||state.savedAt?'繼續編輯':'先在本機開始';$('homeContinue').disabled=loadFailed;
+    $('homeRaw').hidden=!loadFailed;$('homeExport').disabled=loadFailed;
+    $('homeStatus').textContent=loadFailed?'目前本機資料無法讀取，請先下載原始備份修復；原資料不會被覆蓋。':gdDirty?'目前白板尚有未同步的編輯；切換時會先嘗試保存。':'';
+    renderHomeLocal();renderHomeDrive();
+  }
+  async function renderHomeLocal(){
+    const list=$('homeLocalList');list.textContent='載入中…';list.className='home-board-list';
+    try{await workspaceQueue(async()=>{});const index=await Core.get('local-board-index');list.replaceChildren();
+      if(!Array.isArray(index)||!index.length){list.textContent='還沒有其他本機白板，建立後會列在這裡。';list.classList.add('home-empty');return;}
+      for(const item of index){if(typeof item.id!=='string'||typeof item.name!=='string')continue;
+        const button=document.createElement('button');button.className='home-board'+(currentWorkspace().kind==='local'&&item.id===state.boardId?' active':'');
+        const title=document.createElement('strong');title.textContent=item.name;const detail=document.createElement('span');detail.textContent='這個瀏覽器 · '+workspaceTime(item.savedAt);button.append(title,detail);
+        button.addEventListener('click',async()=>{
+          const ok=await transition(async()=>{
+            const record=await Core.get('local-board:'+item.id);if(!record?.state)throw new Error('找不到這張本機白板，請從備份匯入');
+            const next=normalize(record.state);await detachSources();state=next;workspaceMeta={kind:'local',name:item.name};editVersion++;resetScene();updateDriveBtn();
+          });if(ok)closeHome();
+        });list.append(button);
+      }
+    }catch(e){list.textContent='無法讀取本機白板清單；目前白板仍可繼續編輯或匯出。';reportError(e);}
+  }
+  async function renderHomeDrive(){
+    const request=++homeDriveRequest,ready=gdReady(),list=$('homeDriveList');
+    $('homeDriveLogin').hidden=ready;list.hidden=!ready;$('homeDriveRefresh').hidden=!ready;$('homeLogout').hidden=!ready;
+    $('homeDriveOption').disabled=!ready;$('homeDriveOption').textContent=ready?'Google Drive':'Google Drive（請先登入）';
+    if(!ready){$('homeDestination').value='local';return;}
+    list.className='home-board-list';list.textContent='載入白板中…';
+    try{const boards=await gdListBoards();if(request!==homeDriveRequest||!gdReady())return;list.replaceChildren();
+      if(!boards.length){list.textContent='還沒有 Drive 白板，可從「建立新白板」開始。';return;}
+      for(const board of boards){const button=document.createElement('button');button.className='home-board'+(board.id===gdCurrentFileId?' active':'');
+        const title=document.createElement('strong');title.textContent=board.name.replace(/\.json$/,'');const detail=document.createElement('span');detail.textContent='Google Drive · '+workspaceTime(Date.parse(board.modifiedTime));button.append(title,detail);
+        button.addEventListener('click',async()=>{try{if(await gdLoadBoard(board.id,board.name))closeHome();}catch(e){reportError(e);}});list.append(button);
+      }
+    }catch(e){if(request!==homeDriveRequest)return;list.textContent='白板載入失敗，可按「重新整理」重試，或繼續編輯本機副本。';reportError(e);}
+  }
+  $('btnHome').addEventListener('click',openHome);
+  $('homeContinue').addEventListener('click',()=>{if(loadFailed)return;if(!state.savedAt)save();updateDriveBtn();closeHome();});
+  $('homeLogin').addEventListener('click',gdLogin);
+  $('homeDriveRefresh').addEventListener('click',renderHomeDrive);
+  $('homeLogout').addEventListener('click',async()=>{await gdLogout();renderHome();});
+  $('homeImport').addEventListener('click',()=>fileInput.click());
+  $('homeExport').addEventListener('click',()=>downloadJSON('whiteboard-'+Date.now()+'.json',state));
+  $('homeRaw').addEventListener('click',()=>$('btnRawBackup').click());
+  $('homeCreateForm').addEventListener('submit',async event=>{
+    event.preventDefault();const name=$('homeNewName').value.trim();if(!name){$('homeNewName').focus();return;}
+    if($('homeDestination').value==='drive'){
+      if(!gdReady()){reportError(new Error('請先登入 Google Drive'));return;}
+      let file;const ok=await transition(async()=>{file=await gdCreateBoard(name);});
+      if(ok){try{if(await gdLoadBoard(file.id,name+'.json')){$('homeNewName').value='';closeHome();}}catch(e){reportError(e);}}return;
+    }
+    const ok=await transition(async()=>{
+      const index=await Core.get('local-board-index');if(Array.isArray(index)&&index.some(item=>item.name===name))throw new Error('已有同名本機白板，請使用其他名稱');
+      const next=normalize({cards:[]});await detachSources();state=next;workspaceMeta={kind:'local',name};editVersion++;resetScene();save();await archiveLocalWorkspace();updateDriveBtn();
+    });if(ok){$('homeNewName').value='';closeHome();}
+  });
+  home.addEventListener('keydown',event=>{
+    if(event.key==='Escape'&&!loadFailed&&!transitioning){event.preventDefault();closeHome();return;}
+    if(event.key!=='Tab')return;
+    const focusable=[...home.querySelectorAll('button,input,select,a')].filter(el=>!el.disabled&&el.getClientRects().length),first=focusable[0],last=focusable.at(-1);
+    if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}
+    else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
+  });
+
   // Session history tracks board content, not viewport or remote side effects.
   const HISTORY_LIMIT=50,HISTORY_BYTES=16*1024*1024;
   let historyPast=[],historyFuture=[],historyHead='',historyRestoring=false;
@@ -109,7 +196,7 @@
     clearTimeout(saveTimer);saveTimer=setTimeout(()=>{saveTimer=null;save();},350);updateSaveStatus();
   };
   function persistLocalOnly(){
-    try{localStorage.setItem(STORE_KEY,JSON.stringify(state));storageOK=true;localSaved=true;return true;}
+    try{localStorage.setItem(STORE_KEY,JSON.stringify(state));localStorage.setItem('sju-workspace-meta',JSON.stringify(currentWorkspace()));storageOK=true;localSaved=true;archiveLocalWorkspace().catch(e=>reportError(new Error('本機白板清單備份失敗：'+e.message)));return true;}
     catch(e){storageOK=false;localSaved=false;showBanner('本機儲存無法使用或已滿。雲端仍會嘗試同步，請匯出備份。');return false;}
   }
   function save(){
@@ -121,7 +208,8 @@
     return localSaved;
   }
   function load(){
-    try{const raw=localStorage.getItem(STORE_KEY)||localStorage.getItem('sju-whiteboard-v1');if(raw)state=normalize(Core.parse(raw));}
+    try{const raw=localStorage.getItem(STORE_KEY)||localStorage.getItem('sju-whiteboard-v1');if(raw)state=normalize(Core.parse(raw));
+      try{const meta=JSON.parse(localStorage.getItem('sju-workspace-meta')||'null');if(meta?.boardId===state.boardId&&typeof meta.name==='string'&&meta.name.length<=200)workspaceMeta={...meta,kind:meta.kind==='local'?'local':'cache'};}catch(e){}}
     catch(e){showBanner('本機資料無法讀取；已停止自動保存，請先下載原始資料備份。');storageOK=false;localSaved=false;loadFailed=true;}
   }
   let loadFailed=false;
@@ -132,7 +220,7 @@
     clearTimeout(gdWriteTimer);clearTimeout(fileWriteTimer);
     if(gdDirty&&gdCurrentFileId){if(!gdReady())throw new Error('尚有未同步內容，請先重新登入 Drive 或匯出備份');if(!await gdWriteFile())throw new Error('雲端尚未保存，已取消切換');}
     if(fileDirty&&syncHandle&&!await writeSyncFile())throw new Error('同步檔尚未保存，已取消切換');
-    await Core.backup(state,'切換前白板');
+    await archiveLocalWorkspace();await Core.backup(state,'切換前白板');
   }
   async function transition(action){
     if(transitioning||inboxBusy)return false;transitioning=true;document.body.inert=true;
@@ -144,7 +232,7 @@
     try{await Core.backup(state,'刪除前白板');action();}catch(e){reportError(e);}
     finally{transitioning=false;document.body.inert=false;}
   }
-  function resetScene(){resetHistory();closePanel();selection.clear();selectedLink=null;selectedImage=null;selectedGroup=null;buildScene();persistLocalOnly();idleStatus();}
+  function resetScene(){resetHistory();closePanel();selection.clear();selectedLink=null;selectedImage=null;selectedGroup=null;buildScene();persistLocalOnly();idleStatus();updateDriveBtn();}
   function downloadJSON(name,value){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([typeof value==='string'?value:JSON.stringify(value,null,2)],{type:'application/json'}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
   window.addEventListener('beforeunload',e=>{if(saveTimer&&!loadFailed)save();if(gdDirty||fileDirty||!localSaved){e.preventDefault();e.returnValue='';}});
   document.addEventListener('visibilitychange',()=>{if(document.hidden&&saveTimer&&!loadFailed)save();});
@@ -572,7 +660,7 @@
   canvas.addEventListener('wheel',e=>{e.preventDefault();if(marquee)return;if(e.ctrlKey||e.metaKey){setZoom(state.view.zoom*(e.deltaY<0?1.1:0.9),e.clientX,e.clientY);}else{state.view.x-=e.deltaX;state.view.y-=e.deltaY;applyView();scheduleSave();}},{passive:false});
 
   // ---------- keyboard ----------
-  window.addEventListener('keydown',e=>{const ae=document.activeElement;
+  window.addEventListener('keydown',e=>{if(!home.hidden)return;const ae=document.activeElement;
     const typing=ae&&(ae.getAttribute('contenteditable')==='true'||ae.tagName==='INPUT'||ae.tagName==='TEXTAREA');
     if(typing){if(e.key==='Escape')ae.blur();return;}
     const command=(e.metaKey||e.ctrlKey)&&!e.altKey,key=e.key.toLowerCase();
@@ -599,7 +687,7 @@
   fileInput.addEventListener('change',async e=>{
     const f=e.target.files[0];fileInput.value='';if(!f)return;
     try{if(f.size>Core.MAX_BYTES)throw new Error('檔案超過 20 MB 限制');const next=normalize(Core.parse(await f.text()));
-      await transition(async()=>{await detachSources();state=next;editVersion++;resetScene();save();showBanner('已匯入為本機白板，原白板已保留復原快照');});
+      await transition(async()=>{await detachSources();state=next;workspaceMeta={kind:'local',name:f.name.replace(/\.json$/i,'').slice(0,200)||'匯入的白板'};editVersion++;resetScene();save();updateDriveBtn();closeHome();showBanner('已匯入為本機白板，原白板已保留復原快照');});
     }catch(e){reportError(e);}
   });
   $('btnRecovery').addEventListener('click',async event=>{
@@ -627,7 +715,7 @@
   function paintDot(b){const d=$('statusDot');d.classList.remove('warn','danger');if(b>=SIZE_DANGER)d.classList.add('danger');else if(b>=SIZE_WARN)d.classList.add('warn');}
   function idleStatus(){const b=dataBytes();statusEl.textContent=state.cards.length+' 張卡片 · '+fmtSize(b);paintDot(b);}
   function flashStatus(){const b=dataBytes();statusEl.textContent='已儲存 · '+state.cards.length+' 張卡片 · '+fmtSize(b);paintDot(b);clearTimeout(statusTimer);statusTimer=setTimeout(idleStatus,1400);}
-  const showBanner=msg=>{banner.textContent=msg;banner.style.display='block';};
+  const showBanner=msg=>{banner.textContent=msg;banner.style.display='block';if(!home.hidden)$('homeStatus').textContent=msg;};
 
   // ============ TAG ORGANIZE & EXPORT ============
   let currentTag=null;
@@ -767,7 +855,7 @@
   $('mmClose').addEventListener('click',closeMapModal);
   $('mmCancel').addEventListener('click',closeMapModal);
   $('mapModal').addEventListener('pointerdown',e=>{if(e.target.id==='mapModal')closeMapModal();});
-  function drawPin(ctx,x,y,num){ctx.save();ctx.fillStyle='#4C63D2';ctx.beginPath();ctx.arc(x,y-14,11,0,Math.PI*2);ctx.fill();
+  function drawPin(ctx,x,y,num){ctx.save();ctx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();ctx.beginPath();ctx.arc(x,y-14,11,0,Math.PI*2);ctx.fill();
     ctx.beginPath();ctx.moveTo(x-7,y-9);ctx.lineTo(x+7,y-9);ctx.lineTo(x,y);ctx.closePath();ctx.fill();
     ctx.fillStyle='#fff';ctx.font='bold 12px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(num,x,y-14);ctx.restore();}
   $('mmOk').addEventListener('click',function(){const {w:W,h:H}=mapSize();const z=mp.zoom,c=project(mp.lat,mp.lng,z),tl={x:c.x-W/2,y:c.y-H/2},n=Math.pow(2,z);
@@ -895,12 +983,12 @@
       callback:resp=>{
         if(resp.error||!resp.access_token){reportError(new Error('Google 登入失敗，請重試'));return;}
         gdToken=resp;gdUser={};gdFolderId=null;clearTimeout(gdRefreshTimer);
-        gdRefreshTimer=setTimeout(()=>{gdToken=null;updateDriveBtn();updateSaveStatus();showBanner('Drive 授權已到期，請按 Drive 重新登入；內容仍保留在本機。');},Math.max(1000,(Number(resp.expires_in)||3600)*1000));
-        updateDriveBtn();updateSaveStatus();openDriveModal();
+        gdRefreshTimer=setTimeout(()=>{gdToken=null;updateDriveBtn();updateSaveStatus();showBanner('Drive 授權已到期，請重新登入；內容仍保留在本機。');if(!home.hidden)renderHomeDrive();},Math.max(1000,(Number(resp.expires_in)||3600)*1000));
+        updateDriveBtn();updateSaveStatus();if(home.hidden)openDriveModal();else renderHomeDrive();
       },error_callback:()=>showBanner('Google 授權未完成，請按 Drive 重試')});
     client.requestAccessToken();
   }
-  async function gdLogout(){await transition(async()=>{clearTimeout(gdRefreshTimer);gdToken=null;gdUser=null;gdFolderId=null;clearDriveBinding();updateDriveBtn();closeDriveModal();});}
+  async function gdLogout(){await transition(async()=>{clearTimeout(gdRefreshTimer);gdToken=null;gdUser=null;gdFolderId=null;clearDriveBinding();workspaceMeta={...workspaceMeta,kind:workspaceMeta.kind==='local'?'local':'cache'};persistLocalOnly();updateDriveBtn();closeDriveModal();});}
   function clearDriveBinding(){resetHistory();clearTimeout(gdWriteTimer);gdCurrentFileId=null;gdCurrentFileName=null;gdInboxFileId=null;gdBaseline=null;gdDirty=false;gdConflict=false;gdError='';gdLastSavedAt=null;inboxCards=[];updateInboxBadge();updateSaveStatus();}
   async function detachSources(){await unlinkSync();clearDriveBinding();updateDriveBtn();updateInboxLink();}
   async function gdList(q,fields='id,name'){
@@ -979,15 +1067,16 @@
       let inboxId=await gdFindInboxFile(fileName,fileId);if(!inboxId)inboxId=await gdCreateInboxFile(fileName,fileId);
       const cards=Core.inbox(await gdReadFile(inboxId));
       await unlinkSync(); // A Drive board must never inherit a local file destination.
-      state=next;gdCurrentFileId=fileId;gdCurrentFileName=fileName;gdInboxFileId=inboxId;gdBaseline=raw;
+      state=next;workspaceMeta={kind:'drive',name:fileName.replace(/\.json$/,''),id:fileId};gdCurrentFileId=fileId;gdCurrentFileName=fileName;gdInboxFileId=inboxId;gdBaseline=raw;
       gdDirty=false;gdConflict=false;gdError='';gdLastSavedAt=null;editVersion++;inboxCards=cards;
       resetScene();updateDriveBtn();updateInboxLink();updateInboxBadge();updateSaveStatus();showBanner('已載入白板「'+fileName.replace(/\.json$/,'')+'」');
     });
   }
   function updateDriveBtn(){
-    const name=gdCurrentFileName?.replace(/\.json$/,'')||'';
-    $('driveBtnLbl').textContent=(gdReady()?name||'Drive':gdCurrentFileId?'Drive（需登入）':'Drive');
-    $('boardName').textContent=name?'· '+name:'';document.title=name?name+' · 聚思':'聚思';
+    const meta=currentWorkspace(),name=meta.name||'本機白板';
+    $('driveBtnLbl').textContent=gdReady()?(gdCurrentFileName?.replace(/\.json$/,'')||'Drive'):gdCurrentFileId?'Drive（需登入）':'Drive';
+    const location=meta.kind==='local'?'（本機）':meta.kind==='cache'?'（本機副本）':meta.kind==='file'?'（同步檔）':'';
+    $('boardName').textContent='· '+name+location;document.title=name+' · 聚思';
     $('driveAvatar').style.display='none';$('driveCloudIcon').style.display='';
   }
   async function renderDriveModal(){
@@ -1061,8 +1150,8 @@
     try{const handle=await window.showSaveFilePicker({suggestedName:'whiteboard-sync.json',types:[{description:'JSON',accept:{'application/json':['.json']}}]});
       await transition(async()=>{
         const raw=await(await handle.getFile()).text();if(raw)throw new Error('此檔案已有內容，請使用「連結現有同步檔」，避免覆蓋');
-        await detachSources();syncHandle=handle;syncReady=true;fileBaseline=raw;fileDirty=true;state.savedAt=now();
-        if(!await writeSyncFile())throw new Error('同步檔建立失敗，請重試');await idbSet('syncHandle',handle);showBanner('已建立同步檔「'+handle.name+'」。跨裝置使用需將檔案放在雲端同步資料夾。');
+        await detachSources();syncHandle=handle;workspaceMeta={kind:'file',name:handle.name};syncReady=true;fileBaseline=raw;fileDirty=true;state.savedAt=now();
+        if(!await writeSyncFile())throw new Error('同步檔建立失敗，請重試');await idbSet('syncHandle',handle);persistLocalOnly();updateDriveBtn();showBanner('已建立同步檔「'+handle.name+'」。跨裝置使用需將檔案放在雲端同步資料夾。');
       });
     }catch(e){if(e.name!=='AbortError')reportError(e);}
   }
@@ -1071,7 +1160,7 @@
     try{const[handle]=await window.showOpenFilePicker({types:[{description:'JSON',accept:{'application/json':['.json']}}]});
       await transition(async()=>{const raw=await(await handle.getFile()).text(),next=normalize(Core.parse(raw));
         if(!await ensurePerm(handle))throw new Error('請授權同步檔');await detachSources();
-        syncHandle=handle;syncReady=true;fileBaseline=raw;fileDirty=false;state=next;editVersion++;await idbSet('syncHandle',handle);resetScene();updateSyncBtn('ok');showBanner('已載入同步檔「'+handle.name+'」');
+        syncHandle=handle;syncReady=true;fileBaseline=raw;fileDirty=false;state=next;workspaceMeta={kind:'file',name:handle.name};editVersion++;await idbSet('syncHandle',handle);resetScene();updateSyncBtn('ok');showBanner('已載入同步檔「'+handle.name+'」');
       });
     }catch(e){if(e.name!=='AbortError')reportError(e);}
   }
@@ -1102,7 +1191,7 @@
   // ---------- init ----------
   buildCardbar();load();buildScene();resetHistory();
   if(!state.cards.length){state.view={x:40,y:40,zoom:1};applyView();}
-  idleStatus();
+  state.boardId=state.boardId||uid();idleStatus();updateDriveBtn();
   if(loadFailed){world.inert=true;panel.inert=true;}
-  restoreSync();restoreInbox();
+  restoreSync();restoreInbox();openHome();
 })();

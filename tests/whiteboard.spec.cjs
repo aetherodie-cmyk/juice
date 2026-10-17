@@ -1,7 +1,7 @@
 const {test,expect}=require('@playwright/test');
 const empty=(title='')=>({cards:title?[{id:'card1',title,blocks:[{id:'block1',type:'text',html:'Hello'}],tags:[]}]:[],links:[],groups:[],images:[],view:{x:0,y:0,zoom:1},savedAt:123});
 async function mockDrive(page,{writeStatus=200,bad=false,name='Board A.json'}={}){
-  const api={files:{a:JSON.stringify(empty('Remote A')),b:bad?'not json':JSON.stringify(empty('Remote B')),ia:JSON.stringify({version:1,inbox:[]}),ib:JSON.stringify({version:1,inbox:[]})},writes:[],reads:[],writeStatus,listPage:0};
+  const api={files:{a:JSON.stringify(empty('Remote A')),b:bad?'not json':JSON.stringify(empty('Remote B')),ia:JSON.stringify({version:1,inbox:[]}),ib:JSON.stringify({version:1,inbox:[]})},writes:[],reads:[],writeStatus,listPage:0,created:[]};
   await page.route('https://accounts.google.com/gsi/client',r=>r.fulfill({contentType:'application/javascript',body:`window.google={accounts:{oauth2:{initTokenClient:opts=>({requestAccessToken:()=>opts.callback({access_token:'mock-token',expires_in:3600})})}}};`}));
   await page.route('https://www.googleapis.com/**',async route=>{
     const req=route.request(),url=new URL(req.url()),method=req.method();
@@ -15,22 +15,26 @@ async function mockDrive(page,{writeStatus=200,bad=false,name='Board A.json'}={}
     if(url.pathname.endsWith('/files')&&method==='GET'){
       const q=url.searchParams.get('q')||'';
       if(q.includes("mimeType='application/vnd.google-apps.folder'"))return reply({files:[{id:'folder',name:'聚思白板'}]});
-      if(q.includes('appProperties has')){const board=q.includes("value='a'")?'a':'b';return reply({files:[{id:'i'+board,name:'Inbox'}]});}
-      return reply({files:[{id:'a',name,modifiedTime:'2026-07-13T04:40:00Z'},{id:'b',name:'Board B.json',modifiedTime:'2026-07-13T04:40:00Z'}]});
+      if(q.includes('appProperties has')){const board=q.includes("value='a'")?'a':q.includes("value='b'")?'b':null;return reply({files:board?[{id:'i'+board,name:'Inbox'}]:api.created.filter(f=>f.appProperties?.juiceBoardId&&q.includes("value='"+f.appProperties.juiceBoardId+"'"))});}
+      if(q.includes("name='"))return reply({files:api.created.filter(f=>q.includes("name='"+f.name+"'"))});
+      return reply({files:[{id:'a',name,modifiedTime:'2026-07-13T04:40:00Z'},{id:'b',name:'Board B.json',modifiedTime:'2026-07-13T04:40:00Z'},...api.created]});
+    }
+    if(method==='POST'&&url.pathname.endsWith('/files')&&url.searchParams.get('uploadType')==='multipart'){
+      const request=new Request(url,{method:'POST',headers:{'Content-Type':req.headers()['content-type']},body:req.postDataBuffer()});const form=await request.formData();const metadata=JSON.parse(await form.get('metadata').text()),id='created'+api.created.length;api.created.push({...metadata,id,modifiedTime:'2026-10-17T09:00:00Z'});api.files[id]=await form.get('media').text();return reply({id});
     }
     return reply({id:'new-file'});
   });
   return api;
 }
 test.afterEach(async({page})=>{expect(page.appErrors||[]).toEqual([]);});
-async function boot(page){const errors=[];page.appErrors=errors;page.on('pageerror',e=>{errors.push(e.message);console.log('PAGE ERROR:',e.message);});await page.goto('/');await expect(page.locator('#btnAdd')).toBeVisible();return errors;}
+async function boot(page,{showHome=false}={}){const errors=[];page.appErrors=errors;page.on('pageerror',e=>{errors.push(e.message);console.log('PAGE ERROR:',e.stack);});await page.goto('/');await expect(page.locator('#home')).toBeVisible();if(!showHome&&await page.locator('#homeContinue').isEnabled())await page.locator('#homeContinue').click();await expect(page.locator('#btnAdd')).toBeVisible();return errors;}
 async function openBoard(page,name='Board A'){await page.locator('#btnDrive').click();await expect(page.locator('.drv-board-name').first()).toBeVisible();await page.locator('.drv-board-name').filter({hasText:name}).click();await expect(page.locator('#boardName')).toHaveText('· '+name);}
 async function editTitle(page,title){await page.locator('.card').first().dblclick();await page.locator('#pTitle').fill(title);await page.locator('#pClose').click();}
 async function stored(page){return page.evaluate(()=>JSON.parse(localStorage.getItem('sju-whiteboard-v2')));}
 
 test('create, edit, reload and legacy entry share the same app',async({page})=>{
   await mockDrive(page);const errors=await boot(page);await page.locator('#btnAdd').click();await page.locator('#pTitle').fill('Local board');await page.locator('#pClose').click();await page.waitForTimeout(500);
-  expect((await stored(page)).cards[0].title).toBe('Local board');await page.goto('/whiteboard.html');await expect(page).toHaveURL(/index.html/);await expect(page.locator('.ctitle')).toHaveText('Local board');expect(errors).toEqual([]);
+  expect((await stored(page)).cards[0].title).toBe('Local board');await page.goto('/whiteboard.html');await expect(page).toHaveURL(/index.html/);await page.locator('#homeContinue').click();await expect(page.locator('.ctitle')).toHaveText('Local board');expect(errors).toEqual([]);
 });
 test('sanitizer removes active content but preserves supported formatting',async({page})=>{
   await mockDrive(page);await boot(page);
@@ -76,7 +80,7 @@ test('approved inbox card remains pending when destination save fails; retry doe
   api.writeStatus=200;await page.locator('.ib-ok').click();await expect(page.locator('.ib-ok')).toHaveCount(0);expect(JSON.parse(api.files.a).cards.filter(c=>c.title==='AI item')).toHaveLength(1);expect(JSON.parse(api.files.ia).inbox).toHaveLength(0);
 });
 test('import creates a detached local board and backs up the former Drive board',async({page})=>{
-  const api=await mockDrive(page);await boot(page);await openBoard(page);await page.locator('#fileInput').setInputFiles({name:'board.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(empty('Imported')))});await expect(page.locator('#banner')).toContainText('已匯入');await expect(page.locator('#boardName')).toHaveText('');await editTitle(page,'Only local');await page.waitForTimeout(1800);expect(api.writes).toHaveLength(0);expect((await stored(page)).cards[0].title).toBe('Only local');
+  const api=await mockDrive(page);await boot(page);await openBoard(page);await page.locator('#fileInput').setInputFiles({name:'board.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(empty('Imported')))});await expect(page.locator('#banner')).toContainText('已匯入');await expect(page.locator('#boardName')).toContainText('本機');await editTitle(page,'Only local');await page.waitForTimeout(1800);expect(api.writes).toHaveLength(0);expect((await stored(page)).cards[0].title).toBe('Only local');
 });
 
 async function mockLocalFile(page,initial){
@@ -115,7 +119,7 @@ test('new inbox arrivals during approval survive the inbox update',async({page})
   await page.locator('.ib-ok').click();await expect(page.locator('.ib-title')).toHaveText('New arrival');expect(JSON.parse(api.files.ia).inbox.map(c=>c.id)).toEqual(['second']);
 });
 test('corrupt local data is retained for raw backup',async({page})=>{
-  await mockDrive(page);await page.addInitScript(()=>localStorage.setItem('sju-whiteboard-v2','broken-json'));await boot(page);await expect(page.locator('#banner')).toContainText('停止自動保存');await page.locator('#btnAdd').click();expect(await page.evaluate(()=>localStorage.getItem('sju-whiteboard-v2'))).toBe('broken-json');const download=page.waitForEvent('download');await page.locator('#btnRawBackup').click();expect((await download).suggestedFilename()).toBe('whiteboard-local-raw.json');
+  await mockDrive(page);await page.addInitScript(()=>localStorage.setItem('sju-whiteboard-v2','broken-json'));await boot(page);await expect(page.locator('#banner')).toContainText('停止自動保存');await expect(page.locator('#homeContinue')).toBeDisabled();expect(await page.evaluate(()=>localStorage.getItem('sju-whiteboard-v2'))).toBe('broken-json');const download=page.waitForEvent('download');await page.locator('#homeRaw').click();expect((await download).suggestedFilename()).toBe('whiteboard-local-raw.json');
 });
 
 test('Drive transient 429 retries and only then reports success',async({page})=>{
@@ -214,4 +218,31 @@ test('panel creates links with a picker and can undo them',async({page})=>{
 });
 test('panel duplicate button copies the open card',async({page})=>{
   await selectionBoard(page);await page.locator('[data-id="one"].card').dblclick();await page.locator('#pDuplicate').click();await expect(page.locator('.card')).toHaveCount(4);await page.waitForTimeout(450);expect((await stored(page)).cards[3]).toMatchObject({title:'One',x:132,y:132});
+});
+
+async function createHomeLocal(page,name){await page.locator('#homeNewName').fill(name);await page.locator('#homeDestination').selectOption('local');await page.locator('#homeCreateForm').getByRole('button',{name:'建立白板',exact:true}).click();await expect(page.locator('#home')).toBeHidden();}
+test('start screen offers optional login and safely continues the cached board',async({page})=>{
+  await mockDrive(page);await page.addInitScript(data=>localStorage.setItem('sju-whiteboard-v2',JSON.stringify(data)),{...empty('Previous work'),savedAt:Date.now()});await boot(page,{showHome:true});await expect(page.locator('#homeLogin')).toBeVisible();await expect(page.locator('#homeCurrentMeta')).toContainText('1 張卡片');await expect(page.locator('#homeContinue')).toHaveText('繼續編輯');await page.locator('#homeContinue').click();await expect(page.locator('.ctitle')).toHaveText('Previous work');await page.locator('#btnHome').click();await expect(page.locator('#home')).toBeVisible();await page.locator('#home').screenshot({path:'/tmp/juice-start-screen.png'});
+});
+test('named local boards retain separate contents across switching and reload',async({page})=>{
+  await mockDrive(page);await boot(page,{showHome:true});await createHomeLocal(page,'Alpha');await page.locator('#btnAdd').click();await page.locator('#pTitle').fill('Alpha content');await page.locator('#btnHome').click();await expect(page.locator('#homeLocalList .home-board strong')).toHaveText(['Alpha']);await createHomeLocal(page,'Beta');await page.locator('#btnAdd').click();await page.locator('#pTitle').fill('Beta content');await page.locator('#btnHome').click();await expect(page.locator('#homeLocalList .home-board')).toHaveCount(2);await page.locator('#homeLocalList .home-board').filter({hasText:'Alpha'}).click();await expect(page.locator('.ctitle')).toHaveText('Alpha content');await expect(page.locator('#boardName')).toHaveText('· Alpha（本機）');await page.reload();await expect(page.locator('#homeCurrentName')).toHaveText('Alpha');await expect(page.locator('#homeLocalList .home-board')).toHaveCount(2);await page.locator('#homeLocalList .home-board').filter({hasText:'Beta'}).click();await expect(page.locator('.ctitle')).toHaveText('Beta content');
+});
+test('Drive login and board selection work directly from the start screen',async({page})=>{
+  const api=await mockDrive(page);await boot(page,{showHome:true});await page.locator('#homeLogin').click();await expect(page.locator('#homeDriveList .home-board')).toHaveCount(2);expect(api.writes).toHaveLength(0);await page.locator('#homeDriveList .home-board').filter({hasText:'Board A'}).click();await expect(page.locator('#home')).toBeHidden();await expect(page.locator('.ctitle')).toHaveText('Remote A');await page.locator('#btnHome').click();await expect(page.locator('#homeCurrentMeta')).toContainText('Google Drive');
+});
+test('Drive cache reload is labelled as an offline copy and never writes automatically',async({page})=>{
+  const api=await mockDrive(page);await boot(page);await openBoard(page);await page.reload();await expect(page.locator('#homeCurrentName')).toHaveText('Board A');await expect(page.locator('#homeCurrentMeta')).toContainText('本機副本');await page.locator('#homeContinue').click();await expect(page.locator('#boardName')).toContainText('本機副本');expect(api.writes).toHaveLength(0);
+});
+test('start screen import opens a named local board',async({page})=>{
+  await mockDrive(page);await boot(page,{showHome:true});const chooser=page.waitForEvent('filechooser');await page.locator('#homeImport').click();await(await chooser).setFiles({name:'Imported plan.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(empty('Imported content')))});await expect(page.locator('#home')).toBeHidden();await expect(page.locator('#boardName')).toHaveText('· Imported plan（本機）');await expect(page.locator('.ctitle')).toHaveText('Imported content');
+});
+test('failed save blocks switching from start screen and preserves pending work',async({page})=>{
+  const api=await mockDrive(page,{writeStatus:403});await boot(page);await openBoard(page);await editTitle(page,'Pending');await page.locator('#btnHome').click();await page.locator('#homeDriveList .home-board').filter({hasText:'Board B'}).click();await expect(page.locator('#homeStatus')).toContainText('取消切換');await expect(page.locator('#home')).toBeVisible();await expect(page.locator('#homeCurrentName')).toHaveText('Board A');api.writeStatus=200;await page.locator('#homeContinue').click();await expect(page.locator('.ctitle')).toHaveText('Pending');
+});
+test('start screen works at phone width without horizontal scrolling',async({page})=>{
+  await mockDrive(page);await page.setViewportSize({width:390,height:700});await boot(page,{showHome:true});expect(await page.locator('#home').evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);await expect(page.locator('#homeContinue')).toBeInViewport();await page.locator('#home').screenshot({path:'/tmp/juice-start-screen-mobile.png'});
+});
+
+test('start screen creates a Drive board and pairs a new inbox',async({page})=>{
+  const api=await mockDrive(page);await boot(page,{showHome:true});await page.locator('#homeLogin').click();await expect(page.locator('#homeDriveOption')).toBeEnabled();await page.locator('#homeNewName').fill('New cloud board');await page.locator('#homeDestination').selectOption('drive');await page.locator('#homeCreateForm').getByRole('button',{name:'建立白板',exact:true}).click();await expect(page.locator('#home')).toBeHidden();await expect(page.locator('#boardName')).toHaveText('· New cloud board');expect(api.created.map(f=>f.name)).toEqual(['New cloud board.json','New cloud board-inbox.json']);expect(api.created[1].appProperties.juiceBoardId).toBe(api.created[0].id);
 });

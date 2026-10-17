@@ -90,6 +90,14 @@ window.JuiceCore = (() => {
     const keys=store.getAllKeys();keys.onsuccess=()=>{for(const key of keys.result.slice(0,-20))store.delete(key);};
   });
   const backups=()=>db('readonly',tx=>tx.objectStore('recovery').getAll());
+  function storeLocalBoard(record){return db('readwrite',tx=>{
+    const kv=tx.objectStore('kv'),id=record.state.boardId;
+    kv.put(record,'local-board:'+id);
+    const request=kv.get('local-board-index');request.onsuccess=()=>{
+      const index=Array.isArray(request.result)?request.result:[];
+      kv.put([{id,name:record.meta.name,savedAt:record.state.savedAt||0},...index.filter(item=>item.id!==id)],'local-board-index');
+    };
+  });}
   async function request(url,opts,token){
     assert(token,'請重新登入 Drive；尚未同步的內容仍保留');
     const method=opts.method||'GET';
@@ -104,5 +112,5 @@ window.JuiceCore = (() => {
     }
   }
   const queryValue=value=>String(value).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-  return {uid,sanitize,block,normalize,parse,inbox,serial,get,set,del,backup,backups,request,queryValue,MAX_BYTES};
+  return {uid,sanitize,block,normalize,parse,inbox,serial,get,set,del,backup,backups,storeLocalBoard,request,queryValue,MAX_BYTES};
 })();

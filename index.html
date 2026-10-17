@@ -11,7 +11,7 @@
 <body>
 <div id="app">
   <div id="toolbar">
-    <div class="brand">
+    <button class="brand" id="btnHome" title="選擇白板" aria-label="返回白板選擇">
       <span class="mark">
         <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
           <circle cx="8" cy="8" r="5.5" stroke="white" stroke-width="1.6"/>
@@ -19,7 +19,7 @@
         </svg>
       </span>
       聚思<span id="boardName" style="color:rgba(255,255,255,.4);font-weight:400;font-size:12px;margin-left:2px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
-    </div>
+    </button>
     <div class="spacer"></div>
     <div class="actions">
       <button class="tb" id="btnUndo" disabled title="復原（⌘/Ctrl+Z）">復原</button>
@@ -217,6 +217,29 @@
   </div>
 </div>
 
+<div id="home" role="dialog" aria-modal="true" aria-labelledby="homeTitle" hidden>
+  <main class="home-shell">
+    <header class="home-head"><span class="home-mark">聚</span><div><h1 id="homeTitle">從哪張白板開始？</h1><p>接續思考，或開啟一張新的白板。</p></div></header>
+    <section class="home-resume" aria-label="接續編輯">
+      <div><span class="home-eyebrow" id="homeEyebrow">繼續上次編輯</span><h2 id="homeCurrentName">本機白板</h2><p id="homeCurrentMeta"></p></div>
+      <button id="homeContinue" class="home-primary">繼續編輯</button>
+      <div class="home-small-actions"><button id="homeExport">匯出目前白板</button><button id="homeRaw" hidden>下載原始備份</button></div>
+    </section>
+    <p id="homeStatus" role="status" aria-live="polite"></p>
+    <div class="home-columns">
+      <section class="home-section"><div class="home-section-head"><h2>我的 Google Drive 白板</h2><button id="homeDriveRefresh" hidden>重新整理</button><button id="homeLogout" hidden>登出</button></div>
+        <div id="homeDriveLogin"><p>登入後選擇白板，讓內容在裝置間同步。</p><button id="homeLogin" class="home-primary">登入 Google Drive</button><p class="home-note">也可以先在本機開始，不需要登入。</p></div>
+        <div id="homeDriveList" hidden></div>
+      </section>
+      <section class="home-section"><h2>建立新白板</h2><form id="homeCreateForm">
+        <label for="homeNewName">白板名稱</label><input id="homeNewName" maxlength="200" placeholder="例如：旅行計畫" required>
+        <label for="homeDestination">儲存位置</label><select id="homeDestination"><option value="local">這個瀏覽器</option><option id="homeDriveOption" value="drive" disabled>Google Drive（請先登入）</option></select>
+        <p class="home-note">本機白板只保存在此瀏覽器，重要內容請定期匯出。</p><button type="submit" class="home-primary">建立白板</button>
+      </form><button id="homeImport" class="home-import">從 JSON 備份匯入白板</button></section>
+    </div>
+    <section class="home-section"><div class="home-section-head"><h2>這個瀏覽器的白板</h2></div><div id="homeLocalList"></div></section>
+  </main>
+</div>
 <script src="assets/core.js"></script>
 <script src="assets/app.js"></script>
 </body>
