@@ -40,6 +40,16 @@ IndexedDB `sju-sync` 的既有 `kv` store 新增：
 
 首頁與 Drive API 測試使用 mock 驗證登入後列表、建立／開啟、重新整理後離線副本標示、具名本機白板切換、匯入與未同步內容保護；真實 OAuth 授權仍須以測試帳號人工驗證。
 
+## 手機介面與手勢
+
+手機判斷為 `(max-width:640px), (pointer:coarse) and (max-width:1024px)`，JavaScript 與 CSS 使用同一條件。既有新增／框選按鈕移到手機底部導覽，不複製 DOM ID；離開手機版時透過 placeholder 移回桌面工具列。其餘工具以可捲動選單呈現，保留原本事件與原生檔案挑選流程。
+
+卡片瀏覽共用畫布的 pointer map，單指位移超過 8 px 才平移；兩指會取消單指點擊意圖並進入縮放，避免縮放後誤開卡片。手機移動模式才呼叫卡片拖曳；pointercancel 會還原該次移動，不保存半途座標。多選集合沿用桌面資料模型，批次移動仍記為一步復原。
+
+編輯頁由 Visual Viewport 的 height／offsetTop 調整；小於 440 px 時以「外觀」按鈕暫時收合顏色與形狀，優先保留輸入空間。安全區域採 CSS env，輸入欄位採適合手機的字級；不禁止頁面縮放。保存狀態與既有本機／Drive 錯誤共用來源，不新增同步通道。
+
+回歸測試以 Chromium 觸控 context 與 CDP 多點事件驗證手勢；縮小 viewport 測試不等同真實系統鍵盤。發布前建議另測 iOS Safari 與 Android Chrome 的實際鍵盤、橫向、瀏覽器列收合與 App 切回，並沿用既有真實 OAuth 測試流程。
+
 ## 操作復原紀錄
 
 `assets/app.js` 的工作階段歷史以 `cards/links/groups/images` 作為內容快照；不納入 viewport、savedAt、帳號或同步目的地。所有一般保存操作透過 `scheduleSave` 比對內容並記錄，拖曳只在結束時記錄整批操作，文字 input 使用欄位 key 合併一秒內的連續輸入。復原會重建畫面、保存本機並排程同步，因此復原結果仍會寫回目前的 Drive／本機檔案，但不繞過原有遠端衝突檢查。

@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>聚思</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%238B0D12'/><text x='16' y='23' font-family='sans-serif' font-size='18' font-weight='bold' text-anchor='middle' fill='white'>聚</text></svg>">
 <script src="https://accounts.google.com/gsi/client" async></script>
@@ -21,7 +21,8 @@
       聚思<span id="boardName" style="color:rgba(255,255,255,.4);font-weight:400;font-size:12px;margin-left:2px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
     </button>
     <div class="spacer"></div>
-    <div class="actions">
+    <button id="mobileSave" class="mobile-only" title="查看或儲存目前白板"><span id="mobileSaveText">已存本機</span></button>
+    <div class="actions" id="toolbarActions">
       <button class="tb" id="btnUndo" disabled title="復原（⌘/Ctrl+Z）">復原</button>
       <button class="tb" id="btnRedo" disabled title="重做（⌘/Ctrl+Shift+Z）">重做</button>
       <button class="tb" id="btnDuplicate" disabled title="複製選取卡片（⌘/Ctrl+D）">複製</button>
@@ -91,6 +92,16 @@
     <div id="hint"><div class="big">空白的思考空間</div><div class="sm">雙擊（或雙點）任意處新增第一張卡片</div></div>
   </div>
 
+  <div id="mobileMoreBackdrop" class="mobile-only" hidden></div>
+  <div id="mobileHint" class="mobile-only">點卡片編輯 · 單指平移</div>
+  <nav id="mobileNav" class="mobile-only" aria-label="白板操作">
+    <button id="mobileFind" aria-label="搜尋卡片">搜尋</button>
+    <button id="mobileMove" aria-pressed="false">移動</button>
+    <button id="mobileMore" aria-expanded="false" aria-controls="toolbarActions">更多</button>
+  </nav>
+  <div id="mobileFinder" role="dialog" aria-modal="true" aria-label="搜尋卡片" hidden>
+    <div class="mf-box"><div class="mf-head"><input id="mobileQuery" type="search" placeholder="搜尋標題、內文或標籤" aria-label="搜尋卡片內容"><button id="mobileFindClose">取消</button></div><div id="mobileResults"></div></div>
+  </div>
   <div id="cardbar"></div>
 
   <div id="linkbar">
@@ -117,7 +128,7 @@
   </div>
 
   <div id="panel">
-    <div class="ph"><span class="pdot" id="pHeadDot"></span><span class="plbl">卡片</span><div class="pactions"><button id="pDuplicate" title="複製這張卡片">複製</button><button id="pDelete" title="刪除這張卡片">刪除</button><button class="pclose" id="pClose">收起</button></div></div>
+    <div class="ph"><span class="pdot" id="pHeadDot"></span><span class="plbl">卡片</span><button id="panelMobileSave" class="mobile-only" title="儲存狀態"></button><div class="pactions"><button id="mobileAppearance" aria-expanded="true">外觀</button><button id="pDuplicate" title="複製這張卡片">複製</button><button id="pDelete" title="刪除這張卡片">刪除</button><button class="pclose" id="pClose">收起</button></div></div>
     <div class="ptools" aria-label="卡片外觀">
       <div class="ptoolrow"><span class="ptoollabel">顏色</span><div class="pswatches" id="pSwatches"></div></div>
       <div class="ptoolrow"><span class="ptoollabel">形狀</span><div class="pshapes" id="pShapes"></div></div>

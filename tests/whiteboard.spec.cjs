@@ -149,7 +149,7 @@ test('legacy text and rich HTML migrate without active attributes',async({page})
   await mockDrive(page);await boot(page);const data=await page.evaluate(()=>JuiceCore.normalize({cards:[{id:'old',text:'Old title\nBody <literal>'},{id:'rich',body:'<b onclick="alert(1)">Rich</b>'}]}));expect(data.cards[0].title).toBe('Old title');expect(data.cards[0].blocks[0].html).toBe('Body &lt;literal&gt;');expect(data.cards[1].blocks[0].html).toBe('<b>Rich</b>');expect(data.schemaVersion).toBe(3);
 });
 test('toolbar remains scrollable at phone width',async({page})=>{
-  await mockDrive(page);await page.setViewportSize({width:390,height:844});await boot(page);await page.locator('#btnRecovery').click();await expect(page.locator('#banner')).toHaveText('目前還沒有復原快照');await page.locator('#btnAdd').click();await expect(page.locator('#panel')).toHaveClass('open');await expect(page.locator('#pClose')).toBeInViewport();
+  await mockDrive(page);await page.setViewportSize({width:390,height:844});await boot(page);await page.locator('#mobileMore').click();await page.locator('#btnRecovery').click();await expect(page.locator('#banner')).toHaveText('目前還沒有復原快照');await page.locator('#btnAdd').click();await expect(page.locator('#panel')).toHaveClass('open');await expect(page.locator('#pClose')).toBeInViewport();
 });
 
 async function selectionBoard(page,view={x:0,y:0,zoom:1}){
@@ -245,4 +245,39 @@ test('start screen works at phone width without horizontal scrolling',async({pag
 
 test('start screen creates a Drive board and pairs a new inbox',async({page})=>{
   const api=await mockDrive(page);await boot(page,{showHome:true});await page.locator('#homeLogin').click();await expect(page.locator('#homeDriveOption')).toBeEnabled();await page.locator('#homeNewName').fill('New cloud board');await page.locator('#homeDestination').selectOption('drive');await page.locator('#homeCreateForm').getByRole('button',{name:'建立白板',exact:true}).click();await expect(page.locator('#home')).toBeHidden();await expect(page.locator('#boardName')).toHaveText('· New cloud board');expect(api.created.map(f=>f.name)).toEqual(['New cloud board.json','New cloud board-inbox.json']);expect(api.created[1].appProperties.juiceBoardId).toBe(api.created[0].id);
+});
+
+test.describe('mobile touch workflow',()=>{
+  test.use({viewport:{width:390,height:700},hasTouch:true,isMobile:true});
+  test('tap opens editor without moving the card and tools stay reachable',async({page})=>{
+    await selectionBoard(page);const before=await stored(page);await page.locator('[data-id="one"].card').tap();await expect(page.locator('#panel')).toHaveClass('open');await expect(page.locator('#pTitle')).toHaveValue('One');await expect(page.locator('#pClose')).toHaveText('完成');await expect(page.locator('#pClose')).toBeInViewport();await expect(page.locator('#mobileNav')).toBeHidden();expect((await stored(page)).cards[0].x).toBe(before.cards[0].x);await page.locator('#pClose').tap();await expect(page.locator('#mobileNav')).toBeVisible();await page.screenshot({path:'/tmp/juice-mobile-canvas.png',animations:'disabled'});
+  });
+  test('touch drag browses the canvas until move mode is enabled',async({page})=>{
+    await selectionBoard(page);const session=await page.context().newCDPSession(page);
+    async function swipe(x,y,dx,dy){await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});for(let i=1;i<=5;i++)await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x+dx*i/5,y:y+dy*i/5}]});await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});}
+    await swipe(140,175,50,40);await expect(page.locator('#panel')).not.toHaveClass('open');await page.waitForTimeout(450);let data=await stored(page);expect(data.cards[0]).toMatchObject({x:100,y:100});expect(data.view).toMatchObject({x:50,y:40});await page.locator('#mobileMove').tap();await expect(page.locator('#mobileMove')).toHaveAttribute('aria-pressed','true');await swipe(190,215,40,30);await page.waitForTimeout(450);data=await stored(page);expect(data.cards[0]).toMatchObject({x:140,y:130});expect(data.view).toMatchObject({x:50,y:40});
+  });
+  test('mobile search finds card text and opens the result',async({page})=>{
+    await selectionBoard(page);await page.locator('#mobileFind').tap();await page.locator('#mobileQuery').fill('Three');await expect(page.locator('#mobileResults button')).toHaveText('Three');await page.locator('#mobileResults button').tap();await expect(page.locator('#pTitle')).toHaveValue('Three');await expect(page.locator('#mobileFinder')).toBeHidden();
+  });
+  test('touch selection supports moving multiple cards together',async({page})=>{
+    await mockDrive(page);await page.addInitScript(()=>localStorage.setItem('sju-whiteboard-v2',JSON.stringify({cards:[{id:'one',x:20,y:80,title:'One'},{id:'two',x:20,y:240,title:'Two'}],view:{x:0,y:0,zoom:1}})));await boot(page);await page.locator('#btnSelect').tap();await page.locator('[data-id="one"].card').tap();await page.locator('[data-id="two"].card').tap();await expect(page.locator('.card.sel')).toHaveCount(2);await page.locator('#mobileMove').tap();await expect(page.locator('#btnSelect')).toHaveAttribute('aria-pressed','false');
+    const session=await page.context().newCDPSession(page),box=await page.locator('[data-id="one"].card').boundingBox(),x=box.x+50,y=box.y+25;await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});for(let i=1;i<=5;i++)await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x+30*i/5,y:y+20*i/5}]});await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await page.waitForTimeout(450);expect((await stored(page)).cards.map(c=>[c.x,c.y])).toEqual([[50,100],[50,260]]);
+  });
+  test('more tools work without horizontal toolbar scrolling',async({page})=>{
+    await mockDrive(page);await boot(page);await page.locator('#mobileMore').tap();await expect(page.locator('#btnExport')).toBeInViewport();const download=page.waitForEvent('download');await page.locator('#btnExport').tap();await download;await expect(page.locator('#mobileMore')).toHaveAttribute('aria-expanded','false');expect(await page.locator('#mobileNav').evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+  });
+  test('editor adapts to reduced viewport height and keeps completion visible',async({page})=>{
+    await mockDrive(page);await boot(page);await page.locator('#btnAdd').tap();await page.setViewportSize({width:390,height:360});await expect(page.locator('#pClose')).toBeInViewport();await expect(page.locator('#panelMobileSave')).toBeInViewport();await expect(page.locator('#panel .ptools')).toBeHidden();await page.locator('#mobileAppearance').tap();await expect(page.locator('#panel .ptools')).toBeVisible();await page.locator('#mobileAppearance').tap();await page.locator('#pTitle').fill('Keyboard test');await expect(page.locator('#pTitle')).toHaveValue('Keyboard test');await page.setViewportSize({width:390,height:700});await page.locator('#panel').screenshot({path:'/tmp/juice-mobile-editor.png',animations:'disabled'});
+  });
+});
+
+test.describe('mobile pinch and resizing',()=>{
+  test.use({viewport:{width:390,height:700},hasTouch:true,isMobile:true});
+  test('two finger zoom starting on a card never opens or moves it',async({page})=>{
+    await selectionBoard(page);const session=await page.context().newCDPSession(page);await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:140,y:177},{x:280,y:177}]});await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:120,y:177},{x:300,y:177}]});await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await page.waitForTimeout(450);await expect(page.locator('#panel')).not.toHaveClass('open');const data=await stored(page);expect(data.view.zoom).toBeGreaterThan(1);expect(data.cards[0]).toMatchObject({x:100,y:100});
+  });
+  test('changing to desktop restores the existing toolbar and preserves content',async({page})=>{
+    await selectionBoard(page);await expect(page.locator('#mobileNav #btnAdd')).toBeVisible();await page.setViewportSize({width:844,height:390});await expect(page.locator('#mobileNav #btnAdd')).toBeVisible();await page.setViewportSize({width:1280,height:800});await expect(page.locator('#toolbarActions #btnAdd')).toBeVisible();await expect(page.locator('#mobileNav')).toBeHidden();await page.locator('[data-id="one"].card').dblclick();await expect(page.locator('#pTitle')).toHaveValue('One');await expect(page.locator('#pClose')).toHaveText('收起');
+  });
 });
