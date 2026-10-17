@@ -1,0 +1,149 @@
+const {test,expect}=require('@playwright/test');
+const empty=(title='')=>({cards:title?[{id:'card1',title,blocks:[{id:'block1',type:'text',html:'Hello'}],tags:[]}]:[],links:[],groups:[],images:[],view:{x:0,y:0,zoom:1},savedAt:123});
+async function mockDrive(page,{writeStatus=200,bad=false,name='Board A.json'}={}){
+  const api={files:{a:JSON.stringify(empty('Remote A')),b:bad?'not json':JSON.stringify(empty('Remote B')),ia:JSON.stringify({version:1,inbox:[]}),ib:JSON.stringify({version:1,inbox:[]})},writes:[],reads:[],writeStatus,listPage:0};
+  await page.route('https://accounts.google.com/gsi/client',r=>r.fulfill({contentType:'application/javascript',body:`window.google={accounts:{oauth2:{initTokenClient:opts=>({requestAccessToken:()=>opts.callback({access_token:'mock-token',expires_in:3600})})}}};`}));
+  await page.route('https://www.googleapis.com/**',async route=>{
+    const req=route.request(),url=new URL(req.url()),method=req.method();
+    const reply=(body,status=200,extra={})=>route.fulfill({status,contentType:typeof body==='string'?'application/json':'application/json',headers:{etag:'"mock"',...extra},body:typeof body==='string'?body:JSON.stringify(body)});
+    const id=url.pathname.match(/\/files\/([^/]+)$/)?.[1];
+    if(id&&method==='GET'){api.reads.push(id);return reply(api.files[id]??'{}');}
+    if(id&&method==='PATCH'){
+      api.writes.push({id,body:req.postData()});if(api.writeStatus!==200)return reply({error:'mock failure'},api.writeStatus);
+      api.files[id]=req.postData();return reply({id});
+    }
+    if(url.pathname.endsWith('/files')&&method==='GET'){
+      const q=url.searchParams.get('q')||'';
+      if(q.includes("mimeType='application/vnd.google-apps.folder'"))return reply({files:[{id:'folder',name:'聚思白板'}]});
+      if(q.includes('appProperties has')){const board=q.includes("value='a'")?'a':'b';return reply({files:[{id:'i'+board,name:'Inbox'}]});}
+      return reply({files:[{id:'a',name,modifiedTime:'2026-07-13T04:40:00Z'},{id:'b',name:'Board B.json',modifiedTime:'2026-07-13T04:40:00Z'}]});
+    }
+    return reply({id:'new-file'});
+  });
+  return api;
+}
+test.afterEach(async({page})=>{expect(page.appErrors||[]).toEqual([]);});
+async function boot(page){const errors=[];page.appErrors=errors;page.on('pageerror',e=>{errors.push(e.message);console.log('PAGE ERROR:',e.message);});await page.goto('/');await expect(page.locator('#btnAdd')).toBeVisible();return errors;}
+async function openBoard(page,name='Board A'){await page.locator('#btnDrive').click();await expect(page.locator('.drv-board-name').first()).toBeVisible();await page.locator('.drv-board-name').filter({hasText:name}).click();await expect(page.locator('#boardName')).toHaveText('· '+name);}
+async function editTitle(page,title){await page.locator('.card').first().dblclick();await page.locator('#pTitle').fill(title);await page.locator('#pClose').click();}
+async function stored(page){return page.evaluate(()=>JSON.parse(localStorage.getItem('sju-whiteboard-v2')));}
+
+test('create, edit, reload and legacy entry share the same app',async({page})=>{
+  await mockDrive(page);const errors=await boot(page);await page.locator('#btnAdd').click();await page.locator('#pTitle').fill('Local board');await page.locator('#pClose').click();await page.waitForTimeout(500);
+  expect((await stored(page)).cards[0].title).toBe('Local board');await page.goto('/whiteboard.html');await expect(page).toHaveURL(/index.html/);await expect(page.locator('.ctitle')).toHaveText('Local board');expect(errors).toEqual([]);
+});
+test('sanitizer removes active content but preserves supported formatting',async({page})=>{
+  await mockDrive(page);await boot(page);
+  const result=await page.evaluate(()=>JuiceCore.sanitize('<b onclick="alert(1)">bold</b><img src=x onerror="alert(1)"><svg onload="alert(1)"></svg><a href="javascript:alert(1)">bad</a><span style="color:red;background-image:url(https://evil.test)">red</span><a href="https://example.com">good</a>'));
+  expect(result).toContain('<b>bold</b>');expect(result).not.toMatch(/onclick|onerror|onload|javascript:|<img|<svg|background-image/);expect(result).toContain('noopener noreferrer');expect(result).toContain('color: red');
+});
+test('invalid JSON import preserves existing board and source',async({page})=>{
+  await mockDrive(page);await boot(page);await openBoard(page);await page.locator('#fileInput').setInputFiles({name:'bad.json',mimeType:'application/json',buffer:Buffer.from('{"cards":"invalid"}')});await expect(page.locator('#banner')).toContainText('cards');await expect(page.locator('#boardName')).toHaveText('· Board A');await expect(page.locator('.ctitle')).toHaveText('Remote A');
+});
+test('Drive HTTP failure is never reported as saved; switching is blocked',async({page})=>{
+  const api=await mockDrive(page,{writeStatus:403});await boot(page);await openBoard(page);await editTitle(page,'Pending edit');await page.locator('#btnSaveNow').click();await expect(page.locator('#saveStatus')).toHaveText('同步失敗，請重試');await expect(page.locator('#banner')).toContainText('403');
+  await page.locator('#btnDrive').click();await page.locator('.drv-board-name').filter({hasText:'Board B'}).click();await expect(page.locator('#banner')).toContainText('取消切換');await expect(page.locator('#boardName')).toHaveText('· Board A');expect(api.writes.every(w=>w.id==='a')).toBe(true);
+  api.writeStatus=200;await page.locator('#drvClose').click();await page.locator('#btnSaveNow').click();await expect(page.locator('#saveStatus')).toHaveText('剛剛儲存');expect(JSON.parse(api.files.a).cards[0].title).toBe('Pending edit');
+});
+test('localStorage quota failure still allows Drive save',async({page})=>{
+  const api=await mockDrive(page);await boot(page);await openBoard(page);
+  await page.evaluate(()=>{Storage.prototype.setItem=function(){throw new DOMException('full','QuotaExceededError');};});
+  await editTitle(page,'Cloud survives quota');await page.locator('#btnSaveNow').click();await expect(page.locator('#saveStatus')).toHaveText('剛剛儲存');expect(JSON.parse(api.files.a).cards[0].title).toBe('Cloud survives quota');
+});
+test('remote conflict preserves both candidates and blocks overwrite',async({page})=>{
+  const api=await mockDrive(page);await boot(page);await openBoard(page);await editTitle(page,'Local candidate');api.files.a=JSON.stringify(empty('Other device'));
+  await page.locator('#btnSaveNow').click();await expect(page.locator('#saveStatus')).toHaveText('同步衝突');expect(api.writes).toHaveLength(0);
+  const snapshots=await page.evaluate(()=>JuiceCore.backups());expect(snapshots.some(s=>s.value.local?.cards?.[0]?.title==='Local candidate'&&s.value.remote?.cards?.[0]?.title==='Other device')).toBe(true);
+});
+test('corrupt remote board never replaces current content',async({page})=>{
+  await mockDrive(page,{bad:true});await boot(page);await openBoard(page);await page.locator('#btnDrive').click();await page.locator('.drv-board-name').filter({hasText:'Board B'}).click();await expect(page.locator('#banner')).toContainText('JSON');await expect(page.locator('#boardName')).toHaveText('· Board A');await expect(page.locator('.ctitle')).toHaveText('Remote A');
+});
+test('Drive filenames render as text',async({page})=>{
+  await mockDrive(page,{name:'<img src=x onerror=alert(1)>.json'});await boot(page);await page.locator('#btnDrive').click();await expect(page.locator('.drv-board-name').first()).toHaveText('<img src=x onerror=alert(1)>');await expect(page.locator('.drv-board-name img')).toHaveCount(0);
+});
+test('Drive read-modify-write does not lose rapid edits',async({page})=>{
+  const api=await mockDrive(page);await boot(page);await openBoard(page);await editTitle(page,'First');await page.locator('#btnSaveNow').click();await expect(page.locator('#saveStatus')).toHaveText('剛剛儲存');await editTitle(page,'Second');await page.locator('#btnSaveNow').click();await expect(page.locator('#saveStatus')).toHaveText('剛剛儲存');expect(JSON.parse(api.files.a).cards[0].title).toBe('Second');
+});
+test('schema rejects invalid dimensions, duplicate IDs, bad references and active images',async({page})=>{
+  await mockDrive(page);await boot(page);
+  const results=await page.evaluate(()=>[
+    {cards:[{id:'x'},{id:'x'}]}, {cards:[],view:{zoom:0}}, {cards:[],links:[{from:'missing',to:'missing'}]}, {cards:[{blocks:[{src:'data:image/svg+xml,<svg onload=alert(1) />'}]}]}, {cards:[],schemaVersion:99}
+  ].map(d=>{try{JuiceCore.normalize(d);return false;}catch{return true;}}));expect(results).toEqual([true,true,true,true,true]);
+});
+test('approved inbox card remains pending when destination save fails; retry does not duplicate',async({page})=>{
+  const api=await mockDrive(page);api.files.ia=JSON.stringify({version:1,inbox:[{id:'incoming1',title:'AI item',blocks:[{id:'incomingblock',type:'text',html:'AI text'}]}]});
+  await boot(page);await openBoard(page);await page.locator('#btnInbox').click();await expect(page.locator('.ib-ok')).toBeVisible();api.writeStatus=403;await page.locator('.ib-ok').click();await expect(page.locator('#banner')).toContainText('待審卡已保留');expect(JSON.parse(api.files.ia).inbox).toHaveLength(1);
+  api.writeStatus=200;await page.locator('.ib-ok').click();await expect(page.locator('.ib-ok')).toHaveCount(0);expect(JSON.parse(api.files.a).cards.filter(c=>c.title==='AI item')).toHaveLength(1);expect(JSON.parse(api.files.ia).inbox).toHaveLength(0);
+});
+test('import creates a detached local board and backs up the former Drive board',async({page})=>{
+  const api=await mockDrive(page);await boot(page);await openBoard(page);await page.locator('#fileInput').setInputFiles({name:'board.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(empty('Imported')))});await expect(page.locator('#banner')).toContainText('已匯入');await expect(page.locator('#boardName')).toHaveText('');await editTitle(page,'Only local');await page.waitForTimeout(1800);expect(api.writes).toHaveLength(0);expect((await stored(page)).cards[0].title).toBe('Only local');
+});
+
+async function mockLocalFile(page,initial){
+  await page.addInitScript(initial=>{
+    const ready=(async()=>{const dir=await navigator.storage.getDirectory(),h=await dir.getFileHandle('whiteboard-sync.json',{create:true});const w=await h.createWritable();await w.write(initial);await w.close();window.testHandle=h;return h;})();
+    FileSystemFileHandle.prototype.queryPermission=async()=> 'granted';FileSystemFileHandle.prototype.requestPermission=async()=> 'granted';
+    window.showOpenFilePicker=async()=>[await ready];window.showSaveFilePicker=async()=>await ready;
+  },initial);
+}
+async function chooseSync(page,label){await page.locator('#btnSync').click();await page.locator('.bmenu').getByText(label,{exact:true}).click();}
+
+test('local file conflict preserves local edits and never overwrites external changes',async({page})=>{
+  await mockDrive(page);await mockLocalFile(page,JSON.stringify(empty('File board')));await boot(page);await chooseSync(page,'連結現有同步檔');await expect(page.locator('#banner')).toContainText('已載入同步檔');await editTitle(page,'Unsynced local');
+  await page.evaluate(async raw=>{const w=await testHandle.createWritable();await w.write(raw);await w.close();},JSON.stringify(empty('External edit')));
+  await chooseSync(page,'立即同步');await expect(page.locator('#banner')).toContainText('停止載入及覆寫');expect(await page.evaluate(async()=>JSON.parse(await(await testHandle.getFile()).text()).cards[0].title)).toBe('External edit');expect((await stored(page)).cards[0].title).toBe('Unsynced local');
+});
+test('switching from a local file to Drive detaches the old file destination',async({page})=>{
+  const api=await mockDrive(page);await mockLocalFile(page,JSON.stringify(empty('File board')));await boot(page);await chooseSync(page,'連結現有同步檔');await expect(page.locator('#banner')).toContainText('已載入同步檔');await openBoard(page);await editTitle(page,'Drive only');await page.locator('#btnSaveNow').click();await expect(page.locator('#saveStatus')).toHaveText('剛剛儲存');
+  expect(await page.evaluate(async()=>JSON.parse(await(await testHandle.getFile()).text()).cards[0].title)).toBe('File board');expect(JSON.parse(api.files.a).cards[0].title).toBe('Drive only');
+});
+test('new sync file picker refuses to replace an existing nonempty file',async({page})=>{
+  await mockDrive(page);await mockLocalFile(page,JSON.stringify(empty('Existing')));await boot(page);await chooseSync(page,'建立新的同步檔');await expect(page.locator('#banner')).toContainText('此檔案已有內容');expect(await page.evaluate(async()=>JSON.parse(await(await testHandle.getFile()).text()).cards[0].title)).toBe('Existing');
+});
+test('401 requires login and preserves dirty board',async({page})=>{
+  const api=await mockDrive(page,{writeStatus:401});await boot(page);await openBoard(page);await editTitle(page,'Keep me');await page.locator('#btnSaveNow').click();await expect(page.locator('#saveStatus')).toHaveText('需重新登入');expect((await stored(page)).cards[0].title).toBe('Keep me');expect(JSON.parse(api.files.a).cards[0].title).toBe('Remote A');
+});
+test('412 conditional update stops overwrite and exposes conflict',async({page})=>{
+  await mockDrive(page,{writeStatus:412});await boot(page);await openBoard(page);await editTitle(page,'Conditional candidate');await page.locator('#btnSaveNow').click();await expect(page.locator('#saveStatus')).toHaveText('同步衝突');
+});
+test('new inbox arrivals during approval survive the inbox update',async({page})=>{
+  const api=await mockDrive(page);api.files.ia=JSON.stringify({version:1,inbox:[{id:'first',title:'First',blocks:[]}]});
+  await boot(page);await openBoard(page);await page.locator('#btnInbox').click();
+  await page.route('https://www.googleapis.com/upload/drive/v3/files/a?uploadType=media',async route=>{
+    api.files.a=route.request().postData();const data=JSON.parse(api.files.ia);data.inbox.push({id:'second',title:'New arrival',blocks:[]});api.files.ia=JSON.stringify(data);await route.fulfill({status:200,body:'{}'});
+  });
+  await page.locator('.ib-ok').click();await expect(page.locator('.ib-title')).toHaveText('New arrival');expect(JSON.parse(api.files.ia).inbox.map(c=>c.id)).toEqual(['second']);
+});
+test('corrupt local data is retained for raw backup',async({page})=>{
+  await mockDrive(page);await page.addInitScript(()=>localStorage.setItem('sju-whiteboard-v2','broken-json'));await boot(page);await expect(page.locator('#banner')).toContainText('停止自動保存');await page.locator('#btnAdd').click();expect(await page.evaluate(()=>localStorage.getItem('sju-whiteboard-v2'))).toBe('broken-json');const download=page.waitForEvent('download');await page.locator('#btnRawBackup').click();expect((await download).suggestedFilename()).toBe('whiteboard-local-raw.json');
+});
+
+test('Drive transient 429 retries and only then reports success',async({page})=>{
+  const api=await mockDrive(page);await boot(page);await openBoard(page);let attempts=0;
+  await page.route('https://www.googleapis.com/upload/drive/v3/files/a?uploadType=media',async route=>{attempts++;if(attempts===1)return route.fulfill({status:429,body:'{}'});api.files.a=route.request().postData();return route.fulfill({status:200,body:'{}'});});
+  await editTitle(page,'Retry saved');await page.locator('#btnSaveNow').click();await expect(page.locator('#saveStatus')).toHaveText('剛剛儲存');expect(attempts).toBe(2);expect(JSON.parse(api.files.a).cards[0].title).toBe('Retry saved');
+});
+test('Drive lists all pages of board results',async({page})=>{
+  await mockDrive(page);await boot(page);
+  await page.route('https://www.googleapis.com/drive/v3/files?**',async route=>{
+    const url=new URL(route.request().url()),q=url.searchParams.get('q');if(!q.includes("'folder' in parents"))return route.fallback();
+    const data=url.searchParams.get('pageToken')?{files:[{id:'b',name:'Second page.json',modifiedTime:'2026-07-13T04:40:00Z'}]}:{files:[{id:'a',name:'First page.json',modifiedTime:'2026-07-13T04:40:00Z'}],nextPageToken:'next'};
+    await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(data)});
+  });
+  await page.locator('#btnDrive').click();await expect(page.locator('.drv-board-name')).toHaveText(['First page','Second page']);
+});
+test('deletion creates a downloadable recovery board',async({page})=>{
+  await mockDrive(page);await boot(page);await page.locator('#btnAdd').click();await page.locator('#pTitle').fill('Before delete');await page.locator('#pDelete').click();await expect(page.locator('.card')).toHaveCount(0);
+  await page.locator('#btnRecovery').click();const download=page.waitForEvent('download');await page.locator('.bmenu .mi').first().click();expect((await download).suggestedFilename()).toMatch(/^whiteboard-recovered-/);expect((await page.evaluate(()=>JuiceCore.backups())).some(s=>s.value.cards?.[0]?.title==='Before delete')).toBe(true);
+});
+
+test('local inbox uses a persistent source ID and saves the board before removing the item',async({page})=>{
+  await mockDrive(page);await mockLocalFile(page,JSON.stringify({version:1,inbox:[{id:'local-item',title:'Local AI',blocks:[]}]}));await boot(page);await page.locator('#btnInbox').click();await page.locator('#ibLink').click();await expect(page.locator('.ib-ok')).toBeVisible();await page.locator('.ib-ok').click();await expect(page.locator('.ib-ok')).toHaveCount(0);
+  const board=await stored(page);expect(board.cards[0].title).toBe('Local AI');expect(board.cards[0].sourceInbox).toMatch(/^file:[a-f0-9-]+:local-item$/);expect(await page.evaluate(async()=>JSON.parse(await(await testHandle.getFile()).text()).inbox)).toEqual([]);
+});
+test('legacy text and rich HTML migrate without active attributes',async({page})=>{
+  await mockDrive(page);await boot(page);const data=await page.evaluate(()=>JuiceCore.normalize({cards:[{id:'old',text:'Old title\nBody <literal>'},{id:'rich',body:'<b onclick="alert(1)">Rich</b>'}]}));expect(data.cards[0].title).toBe('Old title');expect(data.cards[0].blocks[0].html).toBe('Body &lt;literal&gt;');expect(data.cards[1].blocks[0].html).toBe('<b>Rich</b>');expect(data.schemaVersion).toBe(3);
+});
+test('toolbar remains scrollable at phone width',async({page})=>{
+  await mockDrive(page);await page.setViewportSize({width:390,height:844});await boot(page);await page.locator('#btnRecovery').click();await expect(page.locator('#banner')).toHaveText('目前還沒有復原快照');await page.locator('#btnAdd').click();await expect(page.locator('#panel')).toHaveClass('open');await expect(page.locator('#pClose')).toBeInViewport();
+});

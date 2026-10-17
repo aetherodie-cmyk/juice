@@ -1,0 +1,1015 @@
+"use strict";
+(function(){
+  const Core=window.JuiceCore;
+  const COLORS={paper:{bg:'#FFFFFF',border:'#E6E8EC'},amber:{bg:'#FCEFD3',border:'#F2DDA8'},sage:{bg:'#DDEBDD',border:'#BFD8BF'},
+    blue:{bg:'#D8E6F5',border:'#B5CFEC'},rose:{bg:'#F7DEE2',border:'#EFC2CA'},lavender:{bg:'#E6E0F3',border:'#CFC3E8'},grey:{bg:'#EAECEF',border:'#D5D9DF'}};
+  const COLOR_KEYS=Object.keys(COLORS);
+  const STORE_KEY='sju-whiteboard-v2';
+  const BLOCK_TYPES=[
+    {t:'text',label:'內文',icon:'¶'},{t:'h1',label:'標題 1',icon:'H1'},{t:'h2',label:'標題 2',icon:'H2'},{t:'h3',label:'標題 3',icon:'H3'},
+    {t:'bullet',label:'項目清單',icon:'•'},{t:'number',label:'編號清單',icon:'1.'},{t:'todo',label:'待辦清單',icon:'☑'},
+    {t:'quote',label:'引言',icon:'❝'},{t:'callout',label:'重點框',icon:'※'},{t:'code',label:'程式碼',icon:'</>'},
+    {t:'divider',label:'分隔線',icon:'—'},{t:'image',label:'圖片',icon:'IMG'}];
+  const VALID_TYPES=new Set(BLOCK_TYPES.map(b=>b.t));
+  const PLACE={text:'輸入文字…',h1:'標題',h2:'標題',h3:'標題',bullet:'清單項目',number:'清單項目',todo:'待辦事項',quote:'引言',callout:'重點',code:'程式碼'};
+
+  let state={cards:[],links:[],groups:[],images:[],view:{x:0,y:0,zoom:1}};
+  let selection=new Set(), selectedGroup=null, openCardId=null, storageOK=true;
+
+  const $=id=>document.getElementById(id);
+  const canvas=$('canvas'),world=$('world'),linkSvg=$('linkLayer'),cardbar=$('cardbar'),hint=$('hint'),banner=$('banner'),statusEl=$('statusText'),zoomEl=$('zoomLevel'),panel=$('panel');
+  const cardEls=new Map(),linkEls=new Map(),groupEls=new Map(),imageEls=new Map(),linkLabelEls=new Map();
+  let selectedImage=null, bgEdit=false, selectedLink=null, syncHandle=null, syncReady=false, lastRead=0;
+  const uid=Core.uid;
+  const byId=(arr,id)=>arr.find(o=>o.id===id);
+  const now=()=>Date.now();
+
+  function plainText(html){const d=document.createElement('div');d.innerHTML=html||'';return d.textContent||'';}
+  const stripScripts=Core.sanitize;
+
+  function isURL(s){if(!s||/\s/.test(s))return false;if(/^https?:\/\//i.test(s))return true;
+    return /^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+(\/.*)?$/i.test(s)&&/\.[a-z]{2,}($|\/)/i.test(s);}
+  function normalizeURL(s){if(/^https?:\/\//i.test(s)||/^mailto:/i.test(s))return s;return 'https://'+s.replace(/^\/+/,'');}
+  function escapeAttr(s){return (s||'').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+  function escapeHtml(s){return (s||'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));}
+  function mkBlock(type,html){return {id:uid(),type:VALID_TYPES.has(type)?type:'text',html:html||'',checked:false,src:''};}
+  const normBlock=Core.block;
+  function htmlToBlocks(html){
+    const w=document.createElement('div');w.innerHTML=stripScripts(html||'');const bl=[];
+    w.childNodes.forEach(n=>{
+      if(n.nodeType===3){const t=n.textContent.trim();if(t)bl.push(mkBlock('text',escapeHtml(t)));return;}
+      if(n.nodeType!==1)return;const tag=n.tagName.toLowerCase();
+      if(tag==='h1')bl.push(mkBlock('h1',n.innerHTML));
+      else if(tag==='h2')bl.push(mkBlock('h2',n.innerHTML));
+      else if(tag==='h3')bl.push(mkBlock('h3',n.innerHTML));
+      else if(tag==='ul')n.querySelectorAll(':scope>li').forEach(li=>bl.push(mkBlock('bullet',li.innerHTML)));
+      else if(tag==='ol')n.querySelectorAll(':scope>li').forEach(li=>bl.push(mkBlock('number',li.innerHTML)));
+      else if(tag==='blockquote')bl.push(mkBlock('quote',n.innerHTML));
+      else if(tag==='pre')bl.push(mkBlock('code',escapeHtml(n.textContent)));
+      else if(tag==='hr')bl.push(mkBlock('divider',''));
+      else if(tag==='br'){}
+      else n.innerHTML.split(/<br\s*\/?>/i).forEach(seg=>{if(seg.replace(/<[^>]*>/g,'').trim())bl.push(mkBlock('text',seg));});
+    });
+    return bl.length?bl:[mkBlock('text','')];
+  }
+  const blocksText=bl=>(bl||[]).map(b=>plainText(b.html)).join(' ');
+  function countText(title,blocks){const t=(title||'')+' '+blocksText(blocks);
+    const chars=[...t.replace(/\s/g,'')].length;
+    const cjk=(t.match(/[\u4e00-\u9fff\u3040-\u30ff]/g)||[]).length;
+    const latin=(t.match(/[A-Za-z0-9]+/g)||[]).length;
+    return {words:cjk+latin,chars};}
+  function relTime(ts){if(!ts)return '—';const s=Math.floor((now()-ts)/1000);
+    if(s<60)return '剛剛';if(s<3600)return Math.floor(s/60)+' 分鐘前';if(s<86400)return Math.floor(s/3600)+' 小時前';
+    if(s<86400*7)return Math.floor(s/86400)+' 天前';const d=new Date(ts);return d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate();}
+  function cardLabel(c){const t=(c.title||'').trim();if(t)return {text:t,faint:false};
+    for(const b of c.blocks||[]){const p=plainText(b.html).trim();if(p)return {text:p.slice(0,28),faint:false};}
+    return {text:'未命名卡片',faint:true};}
+
+  // ---------- storage ----------
+  let saveTimer=null, editVersion=0, gdDirty=false, fileDirty=false, transitioning=false;
+  let localSaved=true;
+  const reportError=e=>showBanner(e.message||'操作失敗，請重試');
+  const scheduleSave=()=>{
+    if(loadFailed){showBanner('請先下載原始資料備份後重新開啟白板');return;}
+    editVersion++;gdDirty=!!gdCurrentFileId||gdDirty;fileDirty=!!syncHandle||fileDirty;
+    clearTimeout(saveTimer);saveTimer=setTimeout(()=>{saveTimer=null;save();},350);updateSaveStatus();
+  };
+  function persistLocalOnly(){
+    try{localStorage.setItem(STORE_KEY,JSON.stringify(state));storageOK=true;localSaved=true;return true;}
+    catch(e){storageOK=false;localSaved=false;showBanner('本機儲存無法使用或已滿。雲端仍會嘗試同步，請匯出備份。');return false;}
+  }
+  function save(){
+    if(loadFailed)return false;
+    clearTimeout(saveTimer);saveTimer=null;state.schemaVersion=3;state.boardId=state.boardId||uid();state.savedAt=now();
+    if(persistLocalOnly())flashStatus();
+    if(syncReady&&fileDirty)scheduleFileWrite();
+    if(gdReady()&&gdCurrentFileId&&gdDirty)scheduleGdWrite();
+    return localSaved;
+  }
+  function load(){
+    try{const raw=localStorage.getItem(STORE_KEY)||localStorage.getItem('sju-whiteboard-v1');if(raw)state=normalize(Core.parse(raw));}
+    catch(e){showBanner('本機資料無法讀取；已停止自動保存，請先下載原始資料備份。');storageOK=false;localSaved=false;loadFailed=true;}
+  }
+  let loadFailed=false;
+  function normalize(d){return Core.normalize(d,htmlToBlocks);}
+  async function flushCurrent(){
+    if(loadFailed)throw new Error('本機資料格式異常，請先下載原始資料備份後重新開啟');
+    if(saveTimer)save();
+    clearTimeout(gdWriteTimer);clearTimeout(fileWriteTimer);
+    if(gdDirty&&gdCurrentFileId){if(!gdReady())throw new Error('尚有未同步內容，請先重新登入 Drive 或匯出備份');if(!await gdWriteFile())throw new Error('雲端尚未保存，已取消切換');}
+    if(fileDirty&&syncHandle&&!await writeSyncFile())throw new Error('同步檔尚未保存，已取消切換');
+    await Core.backup(state,'切換前白板');
+  }
+  async function transition(action){
+    if(transitioning||inboxBusy)return false;transitioning=true;document.body.inert=true;
+    try{await flushCurrent();await action();return true;}catch(e){reportError(e);return false;}
+    finally{transitioning=false;document.body.inert=false;}
+  }
+  async function destructive(action){
+    if(transitioning||inboxBusy||loadFailed)return;transitioning=true;document.body.inert=true;
+    try{await Core.backup(state,'刪除前白板');action();}catch(e){reportError(e);}
+    finally{transitioning=false;document.body.inert=false;}
+  }
+  function resetScene(){closePanel();selection.clear();selectedLink=null;selectedImage=null;selectedGroup=null;buildScene();persistLocalOnly();idleStatus();}
+  function downloadJSON(name,value){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([typeof value==='string'?value:JSON.stringify(value,null,2)],{type:'application/json'}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
+  window.addEventListener('beforeunload',e=>{if(saveTimer&&!loadFailed)save();if(gdDirty||fileDirty||!localSaved){e.preventDefault();e.returnValue='';}});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden&&saveTimer&&!loadFailed)save();});
+  window.addEventListener('online',()=>{if(gdDirty&&gdReady())scheduleGdWrite();});
+  window.addEventListener('storage',e=>{if(e.key===STORE_KEY)showBanner('另一個分頁已更新本機白板。請匯出目前內容，避免多分頁同時編輯。');});
+
+  // ---------- coords / view ----------
+  function screenToWorld(sx,sy){const r=canvas.getBoundingClientRect();return {x:(sx-r.left-state.view.x)/state.view.zoom,y:(sy-r.top-state.view.y)/state.view.zoom};}
+  function cardCenter(c){const el=cardEls.get(c.id);const w=el?el.offsetWidth:224,h=el?el.offsetHeight:60;return {x:c.x+w/2,y:c.y+h/2};}
+  function applyView(){const{x,y,zoom}=state.view;world.style.transform=`translate(${x}px,${y}px) scale(${zoom})`;
+    canvas.style.backgroundSize=`${24*zoom}px ${24*zoom}px`;canvas.style.backgroundPosition=`${x}px ${y}px`;zoomEl.textContent=Math.round(zoom*100)+'%';}
+  function setZoom(nz,cx,cy){nz=Math.min(2.5,Math.max(0.3,nz));const r=canvas.getBoundingClientRect();cx=(cx==null?r.width/2:cx-r.left);cy=(cy==null?r.height/2:cy-r.top);
+    const wx=(cx-state.view.x)/state.view.zoom,wy=(cy-state.view.y)/state.view.zoom;state.view.zoom=nz;state.view.x=cx-wx*nz;state.view.y=cy-wy*nz;applyView();scheduleSave();}
+
+  // ---------- build ----------
+  function buildScene(){cardEls.forEach(e=>e.remove());cardEls.clear();groupEls.forEach(e=>e.remove());groupEls.clear();imageEls.forEach(e=>e.remove());imageEls.clear();linkEls.forEach(g=>g.remove());linkEls.clear();linkLabelEls.forEach(e=>e.remove());linkLabelEls.clear();
+    state.images.forEach(makeImageEl);applyBgEdit();updateBgBtn();
+    state.groups.forEach(makeGroupEl);state.links.forEach(makeLinkEl);state.cards.forEach(makeCardEl);refreshLinks();applyView();updateHint();updateGroupBtn();}
+  const updateHint=()=>{hint.style.display=state.cards.length?'none':'flex';};
+
+  // ---------- card tiles ----------
+  function makeCardEl(c){const el=document.createElement('div');el.className='card';el.dataset.id=c.id;
+    el.innerHTML='<div class="ctop"><span class="ccaret">▾</span><div class="ctitle"></div></div><div class="cprev"></div><div class="ctags"></div><div class="handle"></div><div class="expand">⤢</div>';
+    world.appendChild(el);cardEls.set(c.id,el);placeCard(c);applyCardColor(c);applyCardShape(c);renderTile(c);
+    el.addEventListener('pointerdown',e=>onCardDown(e,c));
+    el.addEventListener('dblclick',e=>{e.stopPropagation();openPanel(c);});
+    el.querySelector('.ccaret').addEventListener('pointerdown',e=>{e.stopPropagation();e.preventDefault();c.collapsed=!c.collapsed;renderTile(c);refreshLinksFor(c.id);scheduleSave();});
+    el.querySelector('.handle').addEventListener('pointerdown',e=>onHandleDown(e,c));
+    el.querySelector('.expand').addEventListener('pointerdown',e=>{e.stopPropagation();e.preventDefault();openPanel(c);});return el;}
+  const MAX_PREVIEW_BLOCKS=14;
+  function blocksPreviewHTML(blocks){let out='',num=0,n=0,hidden=0;
+    for(const b of blocks||[]){
+      const editable=b.type!=='divider'&&b.type!=='image';
+      if(editable&&!plainText(b.html).trim())continue;
+      if(b.type==='image'&&!b.src)continue;
+      if(n>=MAX_PREVIEW_BLOCKS){hidden++;continue;}
+      if(b.type!=='number')num=0;const txt=b.html||'';
+      if(b.type==='h1')out+='<div class="pvh1">'+txt+'</div>';
+      else if(b.type==='h2')out+='<div class="pvh2">'+txt+'</div>';
+      else if(b.type==='h3')out+='<div class="pvh3">'+txt+'</div>';
+      else if(b.type==='bullet')out+='<div class="pvli"><span>•</span><span>'+txt+'</span></div>';
+      else if(b.type==='number'){num++;out+='<div class="pvli"><span>'+num+'.</span><span>'+txt+'</span></div>';}
+      else if(b.type==='todo')out+='<div class="pvli"><span>'+(b.checked?'☑':'☐')+'</span><span class="'+(b.checked?'pvdone':'')+'">'+txt+'</span></div>';
+      else if(b.type==='quote')out+='<div class="pvq">'+txt+'</div>';
+      else if(b.type==='callout')out+='<div class="pvc">'+txt+'</div>';
+      else if(b.type==='code')out+='<div class="pvcode">'+escapeHtml(plainText(txt))+'</div>';
+      else if(b.type==='divider')out+='<div class="pvhr"></div>';
+      else if(b.type==='image')out+=(b.src?'<img class="pvimg" src="'+escapeAttr(b.src)+'">':'');
+      else out+='<div>'+txt+'</div>';
+      n++;}
+    return {html:out,hidden};}
+  function renderTile(c){const el=cardEls.get(c.id);if(!el)return;
+    const tt=el.querySelector('.ctitle'),pv=el.querySelector('.cprev'),tg=el.querySelector('.ctags'),caret=el.querySelector('.ccaret');
+    const lbl=cardLabel(c),preview=blocksPreviewHTML(c.blocks),prev=preview.html;
+    const hasContent=!!prev||(c.tags&&c.tags.length>0);
+    caret.style.display=hasContent?'':'none';caret.textContent=c.collapsed?'▸':'▾';
+    if(c.collapsed){tt.style.display='';tt.classList.toggle('empty',lbl.faint);tt.textContent=lbl.text;
+      pv.style.display='none';pv.innerHTML='';tg.style.display='none';return;}
+    const hasTitle=(c.title||'').trim();
+    if(hasTitle){tt.style.display='';tt.classList.remove('empty');tt.textContent=hasTitle;
+      if(prev){pv.style.display='';pv.innerHTML=prev;}else{pv.style.display='none';pv.innerHTML='';}}
+    else if(prev){tt.style.display='none';pv.style.display='';pv.innerHTML=prev;}
+    else{tt.style.display='';tt.classList.add('empty');tt.textContent='未命名卡片';pv.style.display='none';pv.innerHTML='';}
+    if(prev&&preview.hidden){const more=document.createElement('button');more.type='button';more.className='pvmore';more.textContent='還有 '+preview.hidden+' 個區塊未顯示 · 點此展開';
+      more.addEventListener('pointerdown',e=>{e.stopPropagation();e.preventDefault();openPanel(c);});pv.appendChild(more);}
+    tg.innerHTML='';
+    (c.tags||[]).forEach(t=>{const s=document.createElement('span');s.className='ctag';s.textContent='#'+t;tg.appendChild(s);});
+    tg.style.display=(c.tags&&c.tags.length)?'':'none';}
+  const placeCard=c=>{const el=cardEls.get(c.id);el.style.left=c.x+'px';el.style.top=c.y+'px';};
+  const applyCardColor=c=>{const el=cardEls.get(c.id),col=COLORS[c.color];el.style.background=col.bg;el.style.borderColor=col.border;};
+  function applyCardShape(c){const el=cardEls.get(c.id);if(!el)return;el.classList.remove('shape-rect','shape-pill');if(c.shape==='rect')el.classList.add('shape-rect');else if(c.shape==='pill')el.classList.add('shape-pill');}
+
+  // ---------- links ----------
+  const SVGNS='http://www.w3.org/2000/svg';
+  function makeLinkEl(l){const g=document.createElementNS(SVGNS,'g');g.dataset.id=l.id;
+    const hit=document.createElementNS(SVGNS,'path');hit.setAttribute('class','lhit');
+    const vis=document.createElementNS(SVGNS,'path');vis.setAttribute('class','lvis');
+    g.appendChild(hit);g.appendChild(vis);linkSvg.appendChild(g);linkEls.set(l.id,g);
+    hit.addEventListener('pointerdown',e=>{e.stopPropagation();selectLink(l.id);});
+    applyLinkDir(l);return g;}
+  function applyLinkDir(l){const g=linkEls.get(l.id);if(!g)return;const vis=g.querySelector('.lvis');
+    vis.removeAttribute('marker-end');vis.removeAttribute('marker-start');
+    if(l.dir==='to'||l.dir==='both')vis.setAttribute('marker-end','url(#arrowhead)');
+    if(l.dir==='both')vis.setAttribute('marker-start','url(#arrowstart)');}
+  function linkPath(x1,y1,x2,y2){const adx=Math.abs(x2-x1),ady=Math.abs(y2-y1);
+    if(ady>=adx){const d=Math.max(40,ady*0.4);return `M ${x1} ${y1} C ${x1} ${y1+(y2>y1?d:-d)}, ${x2} ${y2-(y2>y1?d:-d)}, ${x2} ${y2}`;}
+    const d=Math.max(40,adx*0.4);return `M ${x1} ${y1} C ${x1+(x2>x1?d:-d)} ${y1}, ${x2-(x2>x1?d:-d)} ${y2}, ${x2} ${y2}`;}
+  function edgePoint(cx,cy,hw,hh,tx,ty){let dx=tx-cx,dy=ty-cy;if(!dx&&!dy)return {x:cx,y:cy};
+    const sx=dx!==0?hw/Math.abs(dx):Infinity,sy=dy!==0?hh/Math.abs(dy):Infinity,s=Math.min(sx,sy);return {x:cx+dx*s,y:cy+dy*s};}
+  function ensureLabel(l){if(!l.label){const e=linkLabelEls.get(l.id);if(e){e.remove();linkLabelEls.delete(l.id);}return null;}
+    let e=linkLabelEls.get(l.id);if(!e){e=document.createElement('div');e.className='linklabel';world.appendChild(e);linkLabelEls.set(l.id,e);}e.textContent=l.label;return e;}
+  function updateOneLink(l){const a=byId(state.cards,l.from),b=byId(state.cards,l.to),g=linkEls.get(l.id);
+    if(!a||!b||!g){if(g){g.querySelector('.lvis').setAttribute('d','');g.querySelector('.lhit').setAttribute('d','');}return;}
+    const ea=cardEls.get(a.id),eb=cardEls.get(b.id),ca=cardCenter(a),cb=cardCenter(b);
+    const pa=edgePoint(ca.x,ca.y,ea.offsetWidth/2,ea.offsetHeight/2,cb.x,cb.y);
+    const pb=edgePoint(cb.x,cb.y,eb.offsetWidth/2,eb.offsetHeight/2,ca.x,ca.y);
+    const d=linkPath(pa.x,pa.y,pb.x,pb.y);g.querySelector('.lvis').setAttribute('d',d);g.querySelector('.lhit').setAttribute('d',d);
+    const lab=ensureLabel(l);if(lab){lab.style.left=((pa.x+pb.x)/2)+'px';lab.style.top=((pa.y+pb.y)/2)+'px';}}
+  function refreshLinks(){state.links.forEach(updateOneLink);}
+  function refreshLinksFor(id){state.links.forEach(l=>{if(l.from===id||l.to===id)updateOneLink(l);});}
+  function selectLink(id){clearSelection();selectedLink=id;linkEls.get(id)?.classList.add('sel');showLinkbar(id);}
+  function deselectLink(){if(selectedLink){linkEls.get(selectedLink)?.classList.remove('sel');selectedLink=null;}hideLinkbar();}
+  function showLinkbar(id){const l=byId(state.links,id);if(!l)return;const a=byId(state.cards,l.from),b=byId(state.cards,l.to);if(!a||!b)return;
+    const ca=cardCenter(a),cb=cardCenter(b),mx=(ca.x+cb.x)/2,my=(ca.y+cb.y)/2,r=canvas.getBoundingClientRect();
+    const sx=r.left+state.view.x+mx*state.view.zoom,sy=r.top+state.view.y+my*state.view.zoom,bar=$('linkbar');bar.style.display='flex';
+    bar.querySelectorAll('.dirb').forEach(btn=>btn.classList.toggle('on',btn.dataset.dir===l.dir));
+    bar.querySelector('.lbl').value=l.label||'';bar.style.left=(sx-bar.offsetWidth/2)+'px';bar.style.top=Math.max(58,sy-bar.offsetHeight-14)+'px';}
+  function hideLinkbar(){$('linkbar').style.display='none';}
+  const deleteLink=(id)=>destructive(()=>deleteLinkNow(id));
+  function deleteLinkNow(id){state.links=state.links.filter(l=>l.id!==id);linkEls.get(id)?.remove();linkEls.delete(id);
+    const e=linkLabelEls.get(id);if(e){e.remove();linkLabelEls.delete(id);}if(selectedLink===id){selectedLink=null;hideLinkbar();}
+    if(openCardId)renderConn(curCard());scheduleSave();}
+  $('linkbar').querySelectorAll('.dirb').forEach(btn=>btn.addEventListener('click',()=>{const l=byId(state.links,selectedLink);if(!l)return;l.dir=btn.dataset.dir;applyLinkDir(l);
+    $('linkbar').querySelectorAll('.dirb').forEach(b=>b.classList.toggle('on',b===btn));scheduleSave();}));
+  $('linkbar').querySelector('.lbl').addEventListener('input',function(){const l=byId(state.links,selectedLink);if(!l)return;l.label=this.value;updateOneLink(l);scheduleSave();});
+  $('linkDel').addEventListener('click',()=>{if(selectedLink)deleteLink(selectedLink);});
+
+  // ---------- groups ----------
+  function makeGroupEl(g){const el=document.createElement('div');el.className='group';el.dataset.id=g.id;
+    el.style.left=g.x+'px';el.style.top=g.y+'px';el.style.width=g.w+'px';el.style.height=g.h+'px';
+    const head=document.createElement('div');head.className='ghead';const title=document.createElement('div');title.className='gtitle';title.textContent=g.title;
+    head.appendChild(title);el.appendChild(head);world.appendChild(el);groupEls.set(g.id,el);
+    title.addEventListener('dblclick',e=>{e.stopPropagation();title.setAttribute('contenteditable','true');title.focus();});
+    title.addEventListener('blur',()=>{g.title=title.textContent||'群組';title.removeAttribute('contenteditable');scheduleSave();});
+    title.addEventListener('pointerdown',e=>onGroupDown(e,g));return el;}
+
+  // ---------- selection ----------
+  function clearSelection(){selection.forEach(id=>cardEls.get(id)?.classList.remove('sel'));selection.clear();selectGroup(null);deselectImage();deselectLink();hideCardbar();updateGroupBtn();}
+  function selectCard(id,additive){deselectImage();deselectLink();if(!additive){selection.forEach(x=>cardEls.get(x)?.classList.remove('sel'));selection.clear();}
+    selection.add(id);cardEls.get(id)?.classList.add('sel');selectGroup(null);showCardbar();updateGroupBtn();}
+  function selectGroup(id){if(selectedGroup)groupEls.get(selectedGroup)?.classList.remove('sel');selectedGroup=id;
+    if(id){deselectLink();groupEls.get(id)?.classList.add('sel');selection.forEach(x=>cardEls.get(x)?.classList.remove('sel'));selection.clear();hideCardbar();updateGroupBtn();}}
+  const updateGroupBtn=()=>{$('btnGroup').disabled=selection.size<2;};
+
+  function buildCardbar(){cardbar.innerHTML='';
+    COLOR_KEYS.forEach(k=>{const s=document.createElement('div');s.className='swatch';s.dataset.color=k;s.style.background=COLORS[k].bg;s.style.borderColor=COLORS[k].border;s.title=k;
+      s.addEventListener('pointerdown',e=>{e.stopPropagation();e.preventDefault();selection.forEach(id=>{const c=byId(state.cards,id);c.color=k;applyCardColor(c);if(id===openCardId){$('pHeadDot').style.background=COLORS[k].bg;$('pHeadDot').style.borderColor=COLORS[k].border;}});markSwatch();markPanelSwatch();scheduleSave();});cardbar.appendChild(s);});
+    const vd=document.createElement('div');vd.className='vdiv';cardbar.appendChild(vd);
+    const open=document.createElement('button');open.className='act';open.textContent='展開';
+    open.addEventListener('pointerdown',e=>{e.stopPropagation();e.preventDefault();const id=[...selection][0];if(id)openPanel(byId(state.cards,id));});cardbar.appendChild(open);
+    const del=document.createElement('button');del.className='act danger';del.textContent='刪除';
+    del.addEventListener('pointerdown',e=>{e.stopPropagation();e.preventDefault();deleteSelection();});cardbar.appendChild(del);}
+  function markSwatch(){const cs=[...selection].map(id=>byId(state.cards,id).color);const same=cs.every(c=>c===cs[0])?cs[0]:null;
+    cardbar.querySelectorAll('.swatch').forEach(s=>s.classList.toggle('on',s.dataset.color===same));}
+  function showCardbar(){if(selection.size===0){hideCardbar();return;}let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
+    selection.forEach(id=>{const c=byId(state.cards,id),el=cardEls.get(id);minx=Math.min(minx,c.x);miny=Math.min(miny,c.y);maxx=Math.max(maxx,c.x+el.offsetWidth);maxy=Math.max(maxy,c.y+el.offsetHeight);});
+    const r=canvas.getBoundingClientRect();const sx=r.left+state.view.x+((minx+maxx)/2)*state.view.zoom,sy=r.top+state.view.y+miny*state.view.zoom;
+    cardbar.style.display='flex';cardbar.style.left=Math.max(8,Math.min(innerWidth-cardbar.offsetWidth-8,sx-cardbar.offsetWidth/2))+'px';const top=sy-cardbar.offsetHeight-12;cardbar.style.top=(top>=58?top:r.top+state.view.y+maxy*state.view.zoom+12)+'px';markSwatch();}
+  const hideCardbar=()=>{cardbar.style.display='none';};
+
+  function addCard(wx,wy){const c={id:uid(),x:Math.round(wx-120),y:Math.round(wy-30),color:'paper',shape:'note',title:'',blocks:[mkBlock('text','')],tags:[],collapsed:false,createdAt:now(),updatedAt:now()};
+    state.cards.push(c);makeCardEl(c);updateHint();selectCard(c.id,false);scheduleSave();openPanel(c,true);return c;}
+  const deleteSelection=()=>destructive(()=>deleteSelectionNow());
+  function deleteSelectionNow(){if(selectedGroup){state.groups=state.groups.filter(g=>g.id!==selectedGroup);groupEls.get(selectedGroup)?.remove();groupEls.delete(selectedGroup);selectedGroup=null;scheduleSave();return;}
+    selection.forEach(id=>{if(id===openCardId)closePanel();state.cards=state.cards.filter(c=>c.id!==id);
+      state.links=state.links.filter(l=>{const keep=l.from!==id&&l.to!==id;if(!keep){linkEls.get(l.id)?.remove();linkEls.delete(l.id);const le=linkLabelEls.get(l.id);if(le){le.remove();linkLabelEls.delete(l.id);}}return keep;});
+      cardEls.get(id)?.remove();cardEls.delete(id);});clearSelection();updateHint();refreshLinks();scheduleSave();}
+  function makeGroup(){if(selection.size<2)return;let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
+    selection.forEach(id=>{const c=byId(state.cards,id),el=cardEls.get(id);minx=Math.min(minx,c.x);miny=Math.min(miny,c.y);maxx=Math.max(maxx,c.x+el.offsetWidth);maxy=Math.max(maxy,c.y+el.offsetHeight);});
+    const pad=26;const g={id:uid(),x:Math.round(minx-pad),y:Math.round(miny-pad),w:Math.round(maxx-minx+pad*2),h:Math.round(maxy-miny+pad*2),title:'群組'};
+    state.groups.push(g);makeGroupEl(g);scheduleSave();}
+
+  // ============ EDITOR PANEL ============
+  const pTitle=$('pTitle'),pTags=$('pTags');
+  function curCard(){return openCardId?byId(state.cards,openCardId):null;}
+  function touch(c){c.updatedAt=now();renderInfo(c);}
+  function autoGrow(ta){ta.style.height='auto';ta.style.height=ta.scrollHeight+'px';}
+
+  function openPanel(c,focusTitle){openCardId=c.id;selectCard(c.id,false);
+    $('pHeadDot').style.background=COLORS[c.color].bg;$('pHeadDot').style.borderColor=COLORS[c.color].border;
+    pTitle.value=c.title||'';autoGrow(pTitle);renderBlocks(c);renderTags(c);renderInfo(c);renderConn(c);renderPanelSwatches(c);renderShapePicker(c);
+    panel.classList.add('open');
+    if(focusTitle)setTimeout(()=>pTitle.focus(),60);}
+  function closePanel(){closeMenu();panel.classList.remove('open');openCardId=null;}
+  $('pClose').addEventListener('click',closePanel);
+
+  pTitle.addEventListener('input',()=>{const c=curCard();if(!c)return;c.title=pTitle.value;autoGrow(pTitle);renderTile(c);refreshLinksFor(c.id);touch(c);scheduleSave();});
+  pTitle.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();const el=$('pBlocks').querySelector('.blk .ed');if(el)placeCaretEnd(el);}});
+
+  // ---- block editor ----
+  function isCaretAtStart(el){const s=window.getSelection();if(!s.rangeCount)return false;const r=s.getRangeAt(0).cloneRange();
+    try{r.selectNodeContents(el);r.setEnd(s.getRangeAt(0).startContainer,s.getRangeAt(0).startOffset);}catch(e){return false;}return r.toString().length===0;}
+  function placeCaretEnd(el){el.focus();const s=window.getSelection(),r=document.createRange();r.selectNodeContents(el);r.collapse(false);s.removeAllRanges();s.addRange(r);}
+
+  function renderBlocks(c,focusId){const box=$('pBlocks');box.innerHTML='';let num=0;
+    c.blocks.forEach((b,i)=>{if(b.type==='number')num++;else num=0;box.appendChild(makeBlockEl(c,b,i,num));});
+    if(focusId){const el=box.querySelector('.blk[data-id="'+focusId+'"] .ed');if(el)placeCaretEnd(el);}}
+
+  function makeBlockEl(c,b,i,num){
+    const el=document.createElement('div');el.className='blk'+(b.checked?' done':'');el.dataset.id=b.id;el.dataset.type=b.type;
+    const gut=document.createElement('div');gut.className='blk-gut';
+    const add=document.createElement('button');add.textContent='＋';add.title='在下方新增區塊';
+    add.addEventListener('click',e=>{e.stopPropagation();openInsertMenu(i,add);});
+    const hd=document.createElement('button');hd.textContent='⋮';hd.title='區塊選項';
+    hd.addEventListener('click',e=>{e.stopPropagation();openBlockMenu(b,i,hd);});
+    gut.appendChild(add);gut.appendChild(hd);el.appendChild(gut);
+    const main=document.createElement('div');main.className='blk-main';el.appendChild(main);
+
+    if(b.type==='divider'){const hr=document.createElement('div');hr.className='hr';main.appendChild(hr);return el;}
+    if(b.type==='image'){
+      if(b.src){const img=document.createElement('img');img.src=b.src;main.appendChild(img);}
+      else{const ph=document.createElement('div');ph.className='imgph';ph.textContent='點擊上傳圖片';
+        ph.addEventListener('click',()=>pickImage(src=>{b.src=src;touch(c);scheduleSave();renderTile(c);renderBlocks(c);}));main.appendChild(ph);}
+      return el;}
+    if(b.type==='todo'){const chk=document.createElement('div');chk.className='chk';chk.textContent=b.checked?'✓':'';
+      chk.addEventListener('click',()=>{b.checked=!b.checked;el.classList.toggle('done',b.checked);chk.textContent=b.checked?'✓':'';touch(c);renderTile(c);scheduleSave();});main.appendChild(chk);}
+    if(b.type==='bullet'){const m=document.createElement('div');m.className='marker';m.textContent='•';main.appendChild(m);}
+    if(b.type==='number'){const m=document.createElement('div');m.className='marker';m.textContent=num+'.';main.appendChild(m);}
+
+    const ed=document.createElement('div');ed.className='ed';ed.contentEditable='true';ed.dataset.ph=PLACE[b.type]||'';ed.innerHTML=b.html||'';
+    main.appendChild(ed);
+    ed.addEventListener('input',()=>{b.html=stripScripts(ed.innerHTML);renderTile(c);refreshLinksFor(c.id);touch(c);scheduleSave();});
+    ed.addEventListener('keydown',e=>onBlockKey(e,c,b,ed));
+    ed.addEventListener('paste',e=>onBlockPaste(e,c,b,ed));
+    ed.addEventListener('drop',e=>{e.preventDefault();document.execCommand('insertText',false,e.dataTransfer?.getData('text/plain')||'');b.html=stripScripts(ed.innerHTML);renderTile(c);touch(c);scheduleSave();});
+    ed.addEventListener('click',e=>{const a=e.target.closest('a');if(a&&a.href){e.preventDefault();window.open(a.href,'_blank','noopener');}});
+    return el;}
+
+  function onBlockPaste(e,c,b,ed){const cd=e.clipboardData||window.clipboardData;if(!cd)return;
+    const raw=cd.getData('text/plain')||'';const text=raw.trim();e.preventDefault();
+    if(isURL(text)){const url=normalizeURL(text);const sel=window.getSelection();
+      if(sel&&sel.rangeCount&&!sel.isCollapsed)document.execCommand('createLink',false,url);
+      else document.execCommand('insertHTML',false,'<a href="'+escapeAttr(url)+'">'+escapeHtml(text)+'</a>&nbsp;');}
+    else document.execCommand('insertText',false,raw);
+    b.html=stripScripts(ed.innerHTML);renderTile(c);touch(c);scheduleSave();}
+
+  function onBlockKey(e,c,b,ed){
+    const idx=c.blocks.findIndex(x=>x.id===b.id);
+    if(e.key==='Enter'&&!e.shiftKey){
+      if(b.type==='code'){e.preventDefault();document.execCommand('insertLineBreak');b.html=stripScripts(ed.innerHTML);touch(c);scheduleSave();return;}
+      e.preventDefault();const empty=plainText(b.html).trim()==='';
+      if((b.type==='bullet'||b.type==='number'||b.type==='todo')&&empty){b.type='text';b.checked=false;touch(c);scheduleSave();renderBlocks(c,b.id);return;}
+      const nt=(b.type==='bullet'||b.type==='number'||b.type==='todo')?b.type:'text';
+      const nb=mkBlock(nt,'');c.blocks.splice(idx+1,0,nb);touch(c);scheduleSave();renderBlocks(c,nb.id);return;}
+    if(e.key==='Backspace'&&plainText(b.html).trim()===''&&isCaretAtStart(ed)){
+      if(c.blocks.length>1){e.preventDefault();const prev=c.blocks[idx-1];c.blocks.splice(idx,1);touch(c);scheduleSave();renderTile(c);renderBlocks(c,prev?prev.id:c.blocks[0].id);}
+      else if(b.type!=='text'){e.preventDefault();b.type='text';b.checked=false;scheduleSave();renderBlocks(c,b.id);}}}
+
+  function openInsertMenu(index,anchor){const c=curCard();if(!c)return;const r=anchor.getBoundingClientRect();
+    showMenu(BLOCK_TYPES.map(ty=>({icon:ty.icon,label:ty.label,onClick:()=>insertAfter(index,ty.t)})),r.left,r.bottom+4,'新增區塊');}
+  function openBlockMenu(b,index,anchor){const c=curCard();if(!c)return;const r=anchor.getBoundingClientRect();
+    const items=BLOCK_TYPES.filter(ty=>ty.t!=='image'||true).map(ty=>({icon:ty.icon,label:'轉為 '+ty.label,onClick:()=>changeType(b,ty.t)}));
+    items.push({sep:true});
+    if(index>0)items.push({icon:'↑',label:'上移',onClick:()=>moveBlock(index,-1)});
+    if(index<c.blocks.length-1)items.push({icon:'↓',label:'下移',onClick:()=>moveBlock(index,1)});
+    items.push({icon:'🗑',label:'刪除區塊',danger:true,onClick:()=>deleteBlock(index)});
+    showMenu(items,r.left,r.bottom+4,'轉換類型');}
+  function insertAfter(index,type){const c=curCard();if(!c)return;const nb=mkBlock(type,'');c.blocks.splice(index+1,0,nb);touch(c);scheduleSave();
+    if(type==='image'){renderBlocks(c);pickImage(src=>{nb.src=src;touch(c);scheduleSave();renderTile(c);renderBlocks(c);});}
+    else if(type==='divider'){renderTile(c);renderBlocks(c);}else renderBlocks(c,nb.id);}
+  function changeType(b,type){const c=curCard();if(!c)return;b.type=type;if(type!=='todo')b.checked=false;touch(c);scheduleSave();
+    if(type==='image'&&!b.src){renderBlocks(c);pickImage(src=>{b.src=src;touch(c);scheduleSave();renderTile(c);renderBlocks(c);});}
+    else{renderTile(c);renderBlocks(c,(type!=='divider'&&type!=='image')?b.id:null);}}
+  function moveBlock(index,dir){const c=curCard();if(!c)return;const j=index+dir;if(j<0||j>=c.blocks.length)return;
+    const t=c.blocks[index];c.blocks[index]=c.blocks[j];c.blocks[j]=t;touch(c);scheduleSave();renderTile(c);renderBlocks(c,t.id);}
+  const deleteBlock=(index)=>destructive(()=>deleteBlockNow(index));
+  function deleteBlockNow(index){const c=curCard();if(!c)return;c.blocks.splice(index,1);if(!c.blocks.length)c.blocks.push(mkBlock('text',''));
+    touch(c);scheduleSave();renderTile(c);renderBlocks(c);}
+  $('addBlk').addEventListener('click',()=>{const c=curCard();if(!c)return;openInsertMenu(c.blocks.length-1,$('addBlk'));});
+
+  function pickImage(cb){const i=document.createElement('input');i.type='file';i.accept='image/*';
+    i.onchange=()=>{const f=i.files[0];if(!f)return;if(f.size>Core.MAX_BYTES||!/^image\/(png|jpeg|webp|gif)$/.test(f.type)){showBanner('請選擇 20 MB 內的 PNG、JPEG、WebP 或 GIF 圖片');return;}const rd=new FileReader();rd.onload=()=>resizeImage(rd.result,cb);rd.readAsDataURL(f);};i.click();}
+  function resizeImage(dataUrl,cb,maxDim){const img=new Image();img.onload=()=>{const max=maxDim||1200;let w=img.width,h=img.height;
+    if(w>max||h>max){const s=Math.min(max/w,max/h);w=Math.round(w*s);h=Math.round(h*s);}
+    const cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(img,0,0,w,h);
+    try{cb(cv.toDataURL('image/jpeg',0.85),w,h);}catch(e){cb(dataUrl,w,h);}};img.onerror=()=>showBanner('圖片格式無法讀取');img.src=dataUrl;}
+
+  // inline format toolbar (acts on focused block)
+  $('rtbar').addEventListener('mousedown',e=>{const btn=e.target.closest('button'),dot=e.target.closest('.cdot');
+    if(btn){e.preventDefault();
+      if(btn.dataset.cmd)document.execCommand(btn.dataset.cmd,false,null);
+      else if(btn.dataset.hl){if(!document.execCommand('hiliteColor',false,'#FBE6A2'))document.execCommand('backColor',false,'#FBE6A2');}
+      else if(btn.dataset.link){const u=prompt('輸入連結網址：','https://');if(u&&u.trim()){const url=normalizeURL(u.trim());const sel=window.getSelection();
+        if(sel&&sel.rangeCount&&!sel.isCollapsed)document.execCommand('createLink',false,url);
+        else document.execCommand('insertHTML',false,'<a href="'+escapeAttr(url)+'">'+escapeHtml(u.trim())+'</a>&nbsp;');}}
+      syncFocused();}
+    else if(dot){e.preventDefault();document.execCommand('foreColor',false,dot.dataset.color);syncFocused();}});
+  function syncFocused(){const ae=document.activeElement;if(!ae||!ae.classList.contains('ed'))return;const c=curCard();if(!c)return;
+    const id=ae.closest('.blk').dataset.id;const b=c.blocks.find(x=>x.id===id);if(b){b.html=stripScripts(ae.innerHTML);renderTile(c);touch(c);scheduleSave();}}
+
+  // ---- shared popup menu ----
+  let activeMenu=null;
+  function closeMenu(){if(activeMenu){activeMenu.remove();activeMenu=null;document.removeEventListener('pointerdown',onDocDown,true);}}
+  function onDocDown(e){if(activeMenu&&!activeMenu.contains(e.target))closeMenu();}
+  function showMenu(items,x,y,head){closeMenu();const m=document.createElement('div');m.className='bmenu';
+    if(head){const h=document.createElement('div');h.className='mh';h.textContent=head;m.appendChild(h);}
+    items.forEach(it=>{if(it.sep){const s=document.createElement('div');s.className='msep';m.appendChild(s);return;}
+      const mi=document.createElement('div');mi.className='mi'+(it.danger?' danger':'');
+      const ic=document.createElement('span');ic.className='mic';ic.textContent=it.icon||'';
+      const lb=document.createElement('span');lb.textContent=it.label;mi.appendChild(ic);mi.appendChild(lb);
+      mi.addEventListener('click',()=>{closeMenu();it.onClick&&it.onClick();});m.appendChild(mi);});
+    document.body.appendChild(m);const mw=m.offsetWidth,mh=m.offsetHeight;
+    m.style.left=Math.max(8,Math.min(x,innerWidth-mw-8))+'px';m.style.top=Math.max(8,Math.min(y,innerHeight-mh-8))+'px';
+    activeMenu=m;setTimeout(()=>document.addEventListener('pointerdown',onDocDown,true),0);}
+
+  // ---- tags / info / conn / colors ----
+  function renderTags(c){pTags.innerHTML='';
+    (c.tags||[]).forEach((t,i)=>{const chip=document.createElement('span');chip.className='tagchip';chip.innerHTML='<b>#</b>'+escapeHtml(t)+'<span class="x">×</span>';
+      chip.querySelector('.x').addEventListener('click',()=>{c.tags.splice(i,1);renderTags(c);renderTile(c);touch(c);scheduleSave();});pTags.appendChild(chip);});
+    const inp=document.createElement('input');inp.id='tagInput';inp.maxLength=200;inp.placeholder='+ 標籤';
+    inp.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===','){e.preventDefault();const v=inp.value.trim().replace(/^#/,'');
+      if(v&&!c.tags.includes(v)&&c.tags.length<100){c.tags.push(v);renderTags(c);renderTile(c);touch(c);scheduleSave();const ni=$('tagInput');if(ni)ni.focus();}}});pTags.appendChild(inp);}
+  function renderInfo(c){$('iCreated').textContent=relTime(c.createdAt);$('iUpdated').textContent=relTime(c.updatedAt);
+    const ct=countText(c.title,c.blocks);$('iCount').textContent=ct.words+' 字詞 · '+ct.chars+' 字元';}
+  (function(){const sec=$('infoSec');let open=false;try{open=localStorage.getItem('sju-ui-info')==='1';}catch(e){}
+    sec.classList.toggle('collapsed',!open);
+    $('infoToggle').addEventListener('click',()=>{const willOpen=sec.classList.contains('collapsed');sec.classList.toggle('collapsed',!willOpen);try{localStorage.setItem('sju-ui-info',willOpen?'1':'0');}catch(e){}});})();
+  function connectedCards(id){const ids=new Set();state.links.forEach(l=>{if(l.from===id)ids.add(l.to);if(l.to===id)ids.add(l.from);});return [...ids].map(i=>byId(state.cards,i)).filter(Boolean);}
+  function renderConn(c){const box=$('pConn');box.innerHTML='';const list=connectedCards(c.id);
+    if(!list.length){box.innerHTML='<div class="pempty">還沒有關聯。選取卡片後，從右側圓點拖到另一張卡片即可建立連結。</div>';return;}
+    list.forEach(o=>{const lbl=cardLabel(o);const row=document.createElement('div');row.className='crow';
+      row.innerHTML='<span class="cdotc" style="background:'+COLORS[o.color].bg+'"></span><span class="cname'+(lbl.faint?' faint':'')+'">'+escapeHtml(lbl.text)+'</span>';
+      row.addEventListener('click',()=>{openPanel(o);focusCardOnScreen(o);});box.appendChild(row);});}
+  function focusCardOnScreen(c){const r=canvas.getBoundingClientRect();const cc=cardCenter(c);state.view.x=r.width/2-392/2-cc.x*state.view.zoom;state.view.y=r.height/2-cc.y*state.view.zoom;applyView();}
+  function renderPanelSwatches(c){const box=$('pSwatches');box.innerHTML='';    COLOR_KEYS.forEach(k=>{const s=document.createElement('div');s.className='pswatch';s.dataset.color=k;s.style.background=COLORS[k].bg;s.style.borderColor=COLORS[k].border;
+      s.addEventListener('click',()=>{c.color=k;applyCardColor(c);$('pHeadDot').style.background=COLORS[k].bg;$('pHeadDot').style.borderColor=COLORS[k].border;markPanelSwatch();markSwatch();touch(c);scheduleSave();});box.appendChild(s);});markPanelSwatch();}
+  function markPanelSwatch(){const c=curCard();if(!c)return;$('pSwatches').querySelectorAll('.pswatch').forEach(s=>s.classList.toggle('on',s.dataset.color===c.color));}
+  const SHAPES=[{s:'note',label:'圓角'},{s:'rect',label:'直角'},{s:'pill',label:'膠囊'}];
+  function renderShapePicker(c){const box=$('pShapes');box.innerHTML='';SHAPES.forEach(sp=>{const b=document.createElement('button');b.className='pshape'+(c.shape===sp.s?' on':'');b.textContent=sp.label;
+    b.addEventListener('click',()=>{c.shape=sp.s;applyCardShape(c);renderShapePicker(c);touch(c);scheduleSave();});box.appendChild(b);});}
+  $('pDelete').addEventListener('click',()=>{const c=curCard();if(!c)return;selection=new Set([c.id]);deleteSelection();});
+
+  // ---------- pointer: card drag ----------
+  let drag=null;
+  function onCardDown(e,c){if(e.target.classList.contains('handle')||e.target.classList.contains('expand')||e.target.classList.contains('ccaret'))return;e.stopPropagation();const additive=e.shiftKey;
+    if(!selection.has(c.id))selectCard(c.id,additive);else if(additive){selection.delete(c.id);cardEls.get(c.id).classList.remove('sel');showCardbar();updateGroupBtn();return;}
+    const start=screenToWorld(e.clientX,e.clientY);drag={start,items:[...selection].map(id=>{const cc=byId(state.cards,id);return{c:cc,ox:cc.x,oy:cc.y};}),moved:false,linkEl:e.target.closest('a')};
+    cardEls.get(c.id).setPointerCapture(e.pointerId);cardEls.get(c.id).classList.add('dragging');hideCardbar();
+    window.addEventListener('pointermove',onCardMove);window.addEventListener('pointerup',onCardUp);}
+  function onCardMove(e){if(!drag)return;const p=screenToWorld(e.clientX,e.clientY);const dx=p.x-drag.start.x,dy=p.y-drag.start.y;if(Math.abs(dx)>2||Math.abs(dy)>2)drag.moved=true;
+    drag.items.forEach(it=>{it.c.x=Math.round(it.ox+dx);it.c.y=Math.round(it.oy+dy);placeCard(it.c);refreshLinksFor(it.c.id);});}
+  function onCardUp(){window.removeEventListener('pointermove',onCardMove);window.removeEventListener('pointerup',onCardUp);
+    document.querySelectorAll('.card.dragging').forEach(el=>el.classList.remove('dragging'));if(drag&&drag.moved)scheduleSave();showCardbar();
+    if(drag&&!drag.moved&&drag.linkEl&&drag.linkEl.href)window.open(drag.linkEl.href,'_blank','noopener');drag=null;}
+
+  // ---------- pointer: link handle ----------
+  let linking=null;
+  function onHandleDown(e,c){e.stopPropagation();e.preventDefault();canvas.classList.add('linking');
+    const tmp=document.createElementNS('http://www.w3.org/2000/svg','path');tmp.setAttribute('class','temp');linkSvg.appendChild(tmp);linking={from:c.id,tmp};
+    window.addEventListener('pointermove',onLinkMove);window.addEventListener('pointerup',onLinkUp);}
+  function onLinkMove(e){if(!linking)return;const a=byId(state.cards,linking.from),ca=cardCenter(a);const p=screenToWorld(e.clientX,e.clientY);linking.tmp.setAttribute('d',linkPath(ca.x,ca.y,p.x,p.y));}
+  function onLinkUp(e){window.removeEventListener('pointermove',onLinkMove);window.removeEventListener('pointerup',onLinkUp);canvas.classList.remove('linking');
+    const el=document.elementFromPoint(e.clientX,e.clientY);const target=el?el.closest('.card'):null;linking.tmp.remove();
+    if(target&&target.dataset.id!==linking.from){const to=target.dataset.id;const dup=state.links.some(l=>(l.from===linking.from&&l.to===to)||(l.from===to&&l.to===linking.from));
+      if(!dup){const l={id:uid(),from:linking.from,to,dir:'to',label:''};state.links.push(l);makeLinkEl(l);refreshLinks();if(openCardId===linking.from||openCardId===to)renderConn(curCard());scheduleSave();}}linking=null;}
+
+  // ---------- pointer: groups ----------
+  let gdrag=null;
+  function onGroupDown(e,g){if(e.target.getAttribute('contenteditable')==='true')return;e.stopPropagation();selectGroup(g.id);const start=screenToWorld(e.clientX,e.clientY);
+    const inside=state.cards.filter(c=>{const cc=cardCenter(c);return cc.x>=g.x&&cc.x<=g.x+g.w&&cc.y>=g.y&&cc.y<=g.y+g.h;}).map(c=>({c,ox:c.x,oy:c.y}));
+    gdrag={g,start,gox:g.x,goy:g.y,inside,moved:false};e.target.setPointerCapture(e.pointerId);window.addEventListener('pointermove',onGroupMove);window.addEventListener('pointerup',onGroupUp);}
+  function onGroupMove(e){if(!gdrag)return;const p=screenToWorld(e.clientX,e.clientY);const dx=p.x-gdrag.start.x,dy=p.y-gdrag.start.y;if(Math.abs(dx)>2||Math.abs(dy)>2)gdrag.moved=true;
+    const g=gdrag.g;g.x=Math.round(gdrag.gox+dx);g.y=Math.round(gdrag.goy+dy);const el=groupEls.get(g.id);el.style.left=g.x+'px';el.style.top=g.y+'px';
+    gdrag.inside.forEach(it=>{it.c.x=Math.round(it.ox+dx);it.c.y=Math.round(it.oy+dy);placeCard(it.c);refreshLinksFor(it.c.id);});}
+  function onGroupUp(){window.removeEventListener('pointermove',onGroupMove);window.removeEventListener('pointerup',onGroupUp);if(gdrag&&gdrag.moved)scheduleSave();gdrag=null;}
+
+  // ---------- pointer: canvas ----------
+  const pointers=new Map();let pan=null,pinch=null,lastTap=0,lastTapPos=null;
+  canvas.addEventListener('pointerdown',e=>{if(e.target.closest('.card')||e.target.closest('.group'))return;
+    pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(e.pointerType!=='mouse'){const t=Date.now();if(t-lastTap<300&&lastTapPos&&Math.hypot(e.clientX-lastTapPos.x,e.clientY-lastTapPos.y)<24){const w=screenToWorld(e.clientX,e.clientY);addCard(w.x,w.y);lastTap=0;return;}lastTap=t;lastTapPos={x:e.clientX,y:e.clientY};}
+    if(pointers.size===2){const pts=[...pointers.values()];pinch={d0:Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y),z0:state.view.zoom,cx:(pts[0].x+pts[1].x)/2,cy:(pts[0].y+pts[1].y)/2};pan=null;return;}
+    clearSelection();pan={x:e.clientX,y:e.clientY,vx:state.view.x,vy:state.view.y};canvas.classList.add('panning');canvas.setPointerCapture(e.pointerId);});
+  canvas.addEventListener('pointermove',e=>{if(pointers.has(e.pointerId))pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(pinch&&pointers.size>=2){const pts=[...pointers.values()];const d=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);setZoom(pinch.z0*(d/pinch.d0),pinch.cx,pinch.cy);return;}
+    if(pan){state.view.x=pan.vx+(e.clientX-pan.x);state.view.y=pan.vy+(e.clientY-pan.y);applyView();}});
+  function endPointer(e){pointers.delete(e.pointerId);if(pointers.size<2)pinch=null;if(pan){canvas.classList.remove('panning');pan=null;scheduleSave();}}
+  canvas.addEventListener('pointerup',endPointer);canvas.addEventListener('pointercancel',endPointer);
+  canvas.addEventListener('dblclick',e=>{if(e.target.closest('.card')||e.target.closest('.group')||e.target.closest('#linkLayer'))return;const w=screenToWorld(e.clientX,e.clientY);addCard(w.x,w.y);});
+  canvas.addEventListener('wheel',e=>{e.preventDefault();if(e.ctrlKey||e.metaKey){setZoom(state.view.zoom*(e.deltaY<0?1.1:0.9),e.clientX,e.clientY);}else{state.view.x-=e.deltaX;state.view.y-=e.deltaY;applyView();scheduleSave();}},{passive:false});
+
+  // ---------- keyboard ----------
+  window.addEventListener('keydown',e=>{const ae=document.activeElement;
+    const typing=ae&&(ae.getAttribute('contenteditable')==='true'||ae.tagName==='INPUT'||ae.tagName==='TEXTAREA');
+    if(typing){if(e.key==='Escape')ae.blur();return;}
+    if(e.key==='Delete'||e.key==='Backspace'){if(selectedLink){e.preventDefault();deleteLink(selectedLink);}else if(selectedImage){e.preventDefault();deleteImage(selectedImage);}else if(selection.size||selectedGroup){e.preventDefault();deleteSelection();}}
+    else if(e.key==='Escape'){if($('mapModal').classList.contains('open'))closeMapModal();else if(activeMenu)closeMenu();else if($('tagPanel').classList.contains('open'))closeTagPanel();else if(panel.classList.contains('open'))closePanel();else clearSelection();}
+    else if(e.key==='g'||e.key==='G'){if(selection.size>=2)makeGroup();}});
+
+  // ---------- toolbar ----------
+  $('btnAdd').addEventListener('click',()=>{const r=canvas.getBoundingClientRect();const w=screenToWorld(r.left+r.width/2,r.top+r.height/2);addCard(w.x,w.y);});
+  $('btnGroup').addEventListener('click',makeGroup);
+  $('btnZoomIn').addEventListener('click',()=>setZoom(state.view.zoom*1.15));
+  $('btnZoomOut').addEventListener('click',()=>setZoom(state.view.zoom/1.15));
+  $('btnFit').addEventListener('click',fitView);
+  function fitView(){if(!state.cards.length){state.view={x:40,y:40,zoom:1};applyView();scheduleSave();return;}
+    let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
+    state.cards.forEach(c=>{const el=cardEls.get(c.id);minx=Math.min(minx,c.x);miny=Math.min(miny,c.y);maxx=Math.max(maxx,c.x+el.offsetWidth);maxy=Math.max(maxy,c.y+el.offsetHeight);});
+    const r=canvas.getBoundingClientRect();const pad=80;const zoom=Math.min(1.6,Math.max(0.3,Math.min((r.width-pad)/(maxx-minx||1),(r.height-pad)/(maxy-miny||1))));
+    state.view.zoom=zoom;state.view.x=(r.width-(maxx-minx)*zoom)/2-minx*zoom;state.view.y=(r.height-(maxy-miny)*zoom)/2-miny*zoom;applyView();scheduleSave();}
+  $('btnExport').addEventListener('click',()=>{const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='whiteboard-'+new Date().toISOString().slice(0,10)+'.json';a.click();URL.revokeObjectURL(a.href);});
+  const fileInput=$('fileInput');$('btnImport').addEventListener('click',()=>fileInput.click());
+  fileInput.addEventListener('change',async e=>{
+    const f=e.target.files[0];fileInput.value='';if(!f)return;
+    try{if(f.size>Core.MAX_BYTES)throw new Error('檔案超過 20 MB 限制');const next=normalize(Core.parse(await f.text()));
+      await transition(async()=>{await detachSources();state=next;editVersion++;resetScene();save();showBanner('已匯入為本機白板，原白板已保留復原快照');});
+    }catch(e){reportError(e);}
+  });
+  $('btnRecovery').addEventListener('click',async event=>{
+    const anchor=event.currentTarget.getBoundingClientRect();
+    try{
+      const snapshots=await Core.backups(),items=[];
+      for(const snapshot of [...snapshots].reverse()){
+        const value=snapshot.value,candidates=value.cards?[['白板',value]]:[['本機版本',value.local||value.board],['遠端版本',value.remote]];
+        for(const [label,board] of candidates){if(!board||!Array.isArray(board.cards))continue;
+          items.push({label:new Date(snapshot.at).toLocaleString()+' · '+label+' · '+board.cards.length+' 張卡片',onClick:()=>{downloadJSON('whiteboard-recovered-'+snapshot.at+'-'+label+'.json',board);showBanner('已下載復原白板，可使用「匯入」開啟');}});
+        }
+      }
+      if(!snapshots.length){showBanner('目前還沒有復原快照');return;}
+      items.push({sep:true},{label:'下載完整備份封存（含收件匣）',onClick:()=>downloadJSON('whiteboard-recovery-'+Date.now()+'.json',{version:1,snapshots})});
+      showMenu(items,anchor.left,anchor.bottom+4,'下載要復原的版本');
+    }catch(e){reportError(e);}
+  });
+  $('btnRawBackup').addEventListener('click',()=>{try{downloadJSON('whiteboard-local-raw.json',localStorage.getItem(STORE_KEY)||localStorage.getItem('sju-whiteboard-v1')||'{}');}catch(e){reportError(e);}});
+
+  // ---------- status / storage meter ----------
+  let statusTimer=null;
+  const SIZE_WARN=3*1024*1024, SIZE_DANGER=4.2*1024*1024;
+  function dataBytes(){try{return new Blob([JSON.stringify(state)]).size;}catch(e){return 0;}}
+  function fmtSize(b){if(b<1024)return b+' B';if(b<1024*1024)return (b/1024).toFixed(0)+' KB';return (b/1024/1024).toFixed(2)+' MB';}
+  function paintDot(b){const d=$('statusDot');d.classList.remove('warn','danger');if(b>=SIZE_DANGER)d.classList.add('danger');else if(b>=SIZE_WARN)d.classList.add('warn');}
+  function idleStatus(){const b=dataBytes();statusEl.textContent=state.cards.length+' 張卡片 · '+fmtSize(b);paintDot(b);}
+  function flashStatus(){const b=dataBytes();statusEl.textContent='已儲存 · '+state.cards.length+' 張卡片 · '+fmtSize(b);paintDot(b);clearTimeout(statusTimer);statusTimer=setTimeout(idleStatus,1400);}
+  const showBanner=msg=>{banner.textContent=msg;banner.style.display='block';};
+
+  // ============ TAG ORGANIZE & EXPORT ============
+  let currentTag=null;
+  function allTags(){const m=new Map();state.cards.forEach(c=>(c.tags||[]).forEach(t=>m.set(t,(m.get(t)||0)+1)));
+    return [...m.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));}
+  function openTagPanel(){currentTag=null;$('tagSel').style.display='none';renderTagList();$('tagPanel').classList.add('open');}
+  function closeTagPanel(){$('tagPanel').classList.remove('open');}
+  function renderTagList(){const box=$('tagList');box.innerHTML='';const tags=allTags();
+    if(!tags.length){box.innerHTML='<div class="tpempty">尚未建立任何標籤。在卡片的「標籤」欄輸入即可。</div>';return;}
+    tags.forEach(([t,n])=>{const b=document.createElement('div');b.className='tagbtn'+(t===currentTag?' on':'');
+      b.innerHTML='#'+escapeHtml(t)+' <span class="cnt">'+n+'</span>';b.addEventListener('click',()=>selectTag(t));box.appendChild(b);});}
+  function selectTag(t){currentTag=t;renderTagList();const cards=state.cards.filter(c=>(c.tags||[]).includes(t));
+    $('tagSel').style.display='';$('tagSelTitle').textContent='標籤「'+t+'」· '+cards.length+' 張卡片';
+    const box=$('tagCards');box.innerHTML='';
+    cards.forEach(c=>{const lbl=cardLabel(c),snip=blocksText(c.blocks).trim().slice(0,46);const row=document.createElement('div');row.className='tcard';
+      row.innerHTML='<div class="tct"><span class="tcd" style="background:'+COLORS[c.color].bg+'"></span>'+escapeHtml(lbl.text)+'</div>'+(snip?'<div class="tcp">'+escapeHtml(snip)+'</div>':'');
+      row.addEventListener('click',()=>{openPanel(c);focusCardOnScreen(c);});box.appendChild(row);});}
+  function htmlToMd(html){const d=document.createElement('div');d.innerHTML=html||'';
+    const walk=node=>{let out='';node.childNodes.forEach(n=>{if(n.nodeType===3){out+=n.textContent;return;}if(n.nodeType!==1)return;
+      const tag=n.tagName.toLowerCase(),inner=walk(n);
+      if(tag==='b'||tag==='strong')out+='**'+inner+'**';else if(tag==='i'||tag==='em')out+='*'+inner+'*';
+      else if(tag==='a')out+='['+inner+']('+(n.getAttribute('href')||'')+')';else if(tag==='br')out+='\n';else out+=inner;});return out;};
+    return walk(d).trim();}
+  function blocksToMd(blocks){const parts=[];let num=0;
+    (blocks||[]).forEach(b=>{if(b.type!=='number')num=0;const editable=b.type!=='divider'&&b.type!=='image';const t=htmlToMd(b.html);
+      if(editable&&!t)return;let line;
+      switch(b.type){case 'h1':line='# '+t;break;case 'h2':line='## '+t;break;case 'h3':line='### '+t;break;
+        case 'bullet':line='- '+t;break;case 'number':num++;line=num+'. '+t;break;case 'todo':line='- ['+(b.checked?'x':' ')+'] '+t;break;
+        case 'quote':line='> '+t;break;case 'callout':line='> 💡 '+t;break;case 'code':line='```\n'+plainText(b.html)+'\n```';break;
+        case 'divider':line='---';break;case 'image':line='*(圖片)*';break;default:line=t;}
+      parts.push({line,list:(b.type==='bullet'||b.type==='number'||b.type==='todo')});});
+    let md='';parts.forEach((p,i)=>{if(i>0)md+=(parts[i-1].list&&p.list)?'\n':'\n\n';md+=p.line;});return md;}
+  function cardToMd(c){const title=(c.title||'').trim()||'未命名卡片';let s='## '+title+'\n';
+    if(c.tags&&c.tags.length)s+='\n'+c.tags.map(t=>'#'+t).join(' ')+'\n';
+    const body=blocksToMd(c.blocks);if(body)s+='\n'+body+'\n';return s;}
+  function tagToMd(tag){const cards=state.cards.filter(c=>(c.tags||[]).includes(tag));
+    let md='# 標籤：'+tag+'\n\n共 '+cards.length+' 張卡片\n';cards.forEach(c=>{md+='\n---\n\n'+cardToMd(c);});return md;}
+  function downloadText(name,text){const blob=new Blob([text],{type:'text/markdown;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href);}
+  function copyText(text,btn){
+    if(navigator.clipboard&&navigator.clipboard.writeText)
+      navigator.clipboard.writeText(text).then(()=>flashCopy(btn)).catch(()=>fallbackCopy(text,btn));
+    else fallbackCopy(text,btn);}
+  function fallbackCopy(text,btn){const ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.top='-9999px';ta.style.opacity='0';document.body.appendChild(ta);ta.focus();ta.select();
+    let ok=false;try{ok=document.execCommand('copy');}catch(e){ok=false;}document.body.removeChild(ta);
+    if(ok)flashCopy(btn);else showBanner('此瀏覽器在本機檔案模式下無法自動複製，請改用「下載格式說明」。');}
+  function flashCopy(btn){if(!btn){showBanner('已複製到剪貼簿 ✓');return;}const o=btn.textContent;btn.textContent='已複製 ✓';setTimeout(()=>{btn.textContent=o;},1200);}
+  $('btnTags').addEventListener('click',openTagPanel);
+  $('tpClose').addEventListener('click',closeTagPanel);
+  $('tagExport').addEventListener('click',()=>{if(currentTag)downloadText('標籤-'+currentTag+'-'+new Date().toISOString().slice(0,10)+'.md',tagToMd(currentTag));});
+  $('tagCopy').addEventListener('click',e=>{if(currentTag)copyText(tagToMd(currentTag),e.currentTarget);});
+
+  // ============ MAP BACKGROUND & IMAGE OBJECTS ============
+  // image objects (rendered at bottom layer; cards float above)
+  function makeImageEl(im){const el=document.createElement('div');el.className='imgobj';el.dataset.id=im.id;
+    el.style.left=im.x+'px';el.style.top=im.y+'px';el.style.width=im.w+'px';el.style.opacity=im.opacity;
+    const img=document.createElement('img');img.src=im.src;el.appendChild(img);
+    const res=document.createElement('div');res.className='ires';el.appendChild(res);
+    world.appendChild(el);imageEls.set(im.id,el);
+    el.addEventListener('pointerdown',e=>onImageDown(e,im));
+    res.addEventListener('pointerdown',e=>onImageResize(e,im));return el;}
+  function deselectImage(){if(selectedImage){imageEls.get(selectedImage)?.classList.remove('sel');selectedImage=null;}hideImgbar();}
+  function selectImage(id){deselectLink();selection.forEach(x=>cardEls.get(x)?.classList.remove('sel'));selection.clear();selectGroup(null);hideCardbar();updateGroupBtn();
+    if(selectedImage)imageEls.get(selectedImage)?.classList.remove('sel');selectedImage=id;imageEls.get(id)?.classList.add('sel');showImgbar();}
+  function showImgbar(){const im=byId(state.images,selectedImage);if(!im)return;$('imgOpacity').value=im.opacity;
+    const r=canvas.getBoundingClientRect();const sx=r.left+state.view.x+(im.x+im.w/2)*state.view.zoom,sy=r.top+state.view.y+im.y*state.view.zoom;
+    const bar=$('imgbar');bar.style.display='flex';bar.style.left=(sx-bar.offsetWidth/2)+'px';bar.style.top=Math.max(58,sy-bar.offsetHeight-12)+'px';}
+  function hideImgbar(){$('imgbar').style.display='none';}
+  const deleteImage=(id)=>destructive(()=>deleteImageNow(id));
+  function deleteImageNow(id){state.images=state.images.filter(i=>i.id!==id);imageEls.get(id)?.remove();imageEls.delete(id);if(selectedImage===id)selectedImage=null;hideImgbar();updateBgBtn();scheduleSave();}
+  function applyBgEdit(){imageEls.forEach(el=>{el.classList.toggle('editable',bgEdit);el.style.pointerEvents=bgEdit?'auto':'none';});if(!bgEdit)deselectImage();}
+  function setBgEdit(v){bgEdit=v;applyBgEdit();updateBgBtn();}
+  function updateBgBtn(){const b=$('btnBg');if(!b)return;if(state.images.length){b.style.display='';b.textContent=bgEdit?'圖片：可編輯':'圖片：鎖定';}else b.style.display='none';}
+  let idrag=null,iresz=null;
+  function onImageDown(e,im){if(!bgEdit||e.target.classList.contains('ires'))return;e.stopPropagation();selectImage(im.id);
+    const start=screenToWorld(e.clientX,e.clientY);idrag={im,ox:im.x,oy:im.y,start,moved:false};imageEls.get(im.id).setPointerCapture(e.pointerId);hideImgbar();
+    window.addEventListener('pointermove',onImageMove);window.addEventListener('pointerup',onImageUp);}
+  function onImageMove(e){if(!idrag)return;const p=screenToWorld(e.clientX,e.clientY);const dx=p.x-idrag.start.x,dy=p.y-idrag.start.y;if(Math.abs(dx)>2||Math.abs(dy)>2)idrag.moved=true;
+    idrag.im.x=Math.round(idrag.ox+dx);idrag.im.y=Math.round(idrag.oy+dy);const el=imageEls.get(idrag.im.id);el.style.left=idrag.im.x+'px';el.style.top=idrag.im.y+'px';}
+  function onImageUp(){window.removeEventListener('pointermove',onImageMove);window.removeEventListener('pointerup',onImageUp);if(idrag&&idrag.moved)scheduleSave();showImgbar();idrag=null;}
+  function onImageResize(e,im){if(!bgEdit)return;e.stopPropagation();e.preventDefault();const start=screenToWorld(e.clientX,e.clientY);iresz={im,ow:im.w,start};
+    e.target.setPointerCapture(e.pointerId);hideImgbar();window.addEventListener('pointermove',onResizeMove);window.addEventListener('pointerup',onResizeUp);}
+  function onResizeMove(e){if(!iresz)return;const p=screenToWorld(e.clientX,e.clientY);iresz.im.w=Math.max(80,Math.round(iresz.ow+(p.x-iresz.start.x)));imageEls.get(iresz.im.id).style.width=iresz.im.w+'px';}
+  function onResizeUp(){window.removeEventListener('pointermove',onResizeMove);window.removeEventListener('pointerup',onResizeUp);if(iresz)scheduleSave();showImgbar();iresz=null;}
+  $('imgOpacity').addEventListener('input',e=>{const im=byId(state.images,selectedImage);if(!im)return;im.opacity=parseFloat(e.target.value);imageEls.get(im.id).style.opacity=im.opacity;scheduleSave();});
+  $('imgLock').addEventListener('click',()=>setBgEdit(false));
+  $('imgDelete').addEventListener('click',()=>{if(selectedImage)deleteImage(selectedImage);});
+  $('btnBg').addEventListener('click',()=>setBgEdit(!bgEdit));
+  function placeImageObject(dataUrl,w,h,opacity,dispCap){const r=canvas.getBoundingClientRect();const c0=screenToWorld(r.left+r.width/2,r.top+r.height/2);
+    const dispW=Math.min(w||500,dispCap||700);const im={id:uid(),x:Math.round(c0.x-dispW/2),y:Math.round(c0.y-dispW*((h||300)/(w||500))/2),w:dispW,src:dataUrl,opacity:(opacity==null?0.55:opacity)};
+    state.images.push(im);makeImageEl(im);setBgEdit(true);selectImage(im.id);scheduleSave();}
+  function placeMapImage(dataUrl,w,h){placeImageObject(dataUrl,w,h,0.55,700);}
+  function uploadReferenceImage(){const i=document.createElement('input');i.type='file';i.accept='image/*';
+    i.onchange=()=>{const f=i.files[0];if(!f)return;if(f.size>Core.MAX_BYTES||!/^image\/(png|jpeg|webp|gif)$/.test(f.type)){showBanner('請選擇 20 MB 內的 PNG、JPEG、WebP 或 GIF 圖片');return;}const rd=new FileReader();rd.onload=()=>resizeImage(rd.result,(src,w,h)=>placeImageObject(src,w,h,1,560),1800);rd.readAsDataURL(f);};i.click();}
+
+  // --- lightweight OSM map picker ---
+  const TILE='https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+  const tileURL=(z,x,y)=>TILE.replace('{z}',z).replace('{x}',x).replace('{y}',y);
+  let mp={lat:25.0478,lng:121.5319,zoom:13,pins:[]};
+  function project(lat,lng,z){const n=Math.pow(2,z)*256,x=(lng+180)/360*n,lr=lat*Math.PI/180,y=(1-Math.log(Math.tan(lr)+1/Math.cos(lr))/Math.PI)/2*n;return {x,y};}
+  function unproject(x,y,z){const n=Math.pow(2,z)*256,lng=x/n*360-180,m=Math.PI*(1-2*y/n),lat=Math.atan(Math.sinh(m))*180/Math.PI;return {lat,lng};}
+  function mapSize(){const m=$('mmMap');return {w:m.clientWidth,h:m.clientHeight};}
+  function renderTiles(){const {w:W,h:H}=mapSize();const z=mp.zoom,c=project(mp.lat,mp.lng,z),tl={x:c.x-W/2,y:c.y-H/2},n=Math.pow(2,z);
+    const tiles=$('mmTiles');tiles.innerHTML='';
+    const tx0=Math.floor(tl.x/256),tx1=Math.floor((tl.x+W)/256),ty0=Math.floor(tl.y/256),ty1=Math.floor((tl.y+H)/256);
+    for(let tx=tx0;tx<=tx1;tx++)for(let ty=ty0;ty<=ty1;ty++){if(ty<0||ty>=n)continue;const wx=((tx%n)+n)%n;
+      const img=document.createElement('img');img.src=tileURL(z,wx,ty);img.style.left=(tx*256-tl.x)+'px';img.style.top=(ty*256-tl.y)+'px';tiles.appendChild(img);}
+    renderPins(tl,z);}
+  function renderPins(tl,z){const box=$('mmPins');box.innerHTML='';mp.pins.forEach((p,i)=>{const pp=project(p.lat,p.lng,z);
+    const el=document.createElement('div');el.className='mm-pin';el.style.left=(pp.x-tl.x)+'px';el.style.top=(pp.y-tl.y)+'px';
+    el.innerHTML='<div class="pinhead"><span>'+(i+1)+'</span></div>';
+    el.addEventListener('click',ev=>{ev.stopPropagation();mp.pins.splice(i,1);renderTiles();mmHint();});box.appendChild(el);});}
+  function mmHint(){$('mmHint').textContent=mp.pins.length?(mp.pins.length+' 個圖釘'):'尚未落點（可不落點，直接以目前範圍加入）';}
+  (function(){const map=$('mmMap');let pan=null,moved=false;
+    map.addEventListener('pointerdown',e=>{if(e.target.closest('.mm-pin')||e.target.closest('.mm-zoom'))return;map.classList.add('dragging');
+      pan={x:e.clientX,y:e.clientY,c:project(mp.lat,mp.lng,mp.zoom)};moved=false;try{map.setPointerCapture(e.pointerId);}catch(err){}});
+    map.addEventListener('pointermove',e=>{if(!pan)return;const dx=e.clientX-pan.x,dy=e.clientY-pan.y;if(Math.abs(dx)>3||Math.abs(dy)>3)moved=true;
+      const ll=unproject(pan.c.x-dx,pan.c.y-dy,mp.zoom);mp.lat=ll.lat;mp.lng=ll.lng;renderTiles();});
+    map.addEventListener('pointerup',e=>{map.classList.remove('dragging');
+      if(pan&&!moved){const {w:W,h:H}=mapSize();const c=project(mp.lat,mp.lng,mp.zoom),tl={x:c.x-W/2,y:c.y-H/2},r=map.getBoundingClientRect();
+        const ll=unproject(tl.x+(e.clientX-r.left),tl.y+(e.clientY-r.top),mp.zoom);mp.pins.push({lat:ll.lat,lng:ll.lng});renderTiles();mmHint();}pan=null;});
+    map.addEventListener('wheel',e=>{e.preventDefault();const r=map.getBoundingClientRect(),px=e.clientX-r.left,py=e.clientY-r.top,{w:W,h:H}=mapSize();
+      const c=project(mp.lat,mp.lng,mp.zoom),tl={x:c.x-W/2,y:c.y-H/2},before=unproject(tl.x+px,tl.y+py,mp.zoom);
+      mp.zoom=Math.max(2,Math.min(19,mp.zoom+(e.deltaY<0?1:-1)));
+      const bp=project(before.lat,before.lng,mp.zoom),nc=unproject(bp.x-px+W/2,bp.y-py+H/2,mp.zoom);mp.lat=nc.lat;mp.lng=nc.lng;renderTiles();},{passive:false});
+    $('mmZin').addEventListener('click',()=>{mp.zoom=Math.min(19,mp.zoom+1);renderTiles();});
+    $('mmZout').addEventListener('click',()=>{mp.zoom=Math.max(2,mp.zoom-1);renderTiles();});})();
+  function doSearch(){const q=$('mmSearch').value.trim();if(!q)return;$('mmHint').textContent='搜尋中…';
+    fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(q)).then(r=>r.json())
+      .then(a=>{if(a&&a[0]){mp.lat=parseFloat(a[0].lat);mp.lng=parseFloat(a[0].lon);mp.zoom=14;renderTiles();mmHint();}else $('mmHint').textContent='找不到「'+q+'」';})
+      .catch(()=>{$('mmHint').textContent='搜尋失敗（需要連網）';});}
+  $('mmSearchBtn').addEventListener('click',doSearch);
+  $('mmSearch').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();doSearch();}});
+  function openMapModal(){$('mapModal').classList.add('open');mmHint();setTimeout(renderTiles,40);}
+  function closeMapModal(){$('mapModal').classList.remove('open');}
+  $('btnMap').addEventListener('click',openMapModal);
+  $('btnImg').addEventListener('click',uploadReferenceImage);
+  $('mmClose').addEventListener('click',closeMapModal);
+  $('mmCancel').addEventListener('click',closeMapModal);
+  $('mapModal').addEventListener('pointerdown',e=>{if(e.target.id==='mapModal')closeMapModal();});
+  function drawPin(ctx,x,y,num){ctx.save();ctx.fillStyle='#4C63D2';ctx.beginPath();ctx.arc(x,y-14,11,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.moveTo(x-7,y-9);ctx.lineTo(x+7,y-9);ctx.lineTo(x,y);ctx.closePath();ctx.fill();
+    ctx.fillStyle='#fff';ctx.font='bold 12px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(num,x,y-14);ctx.restore();}
+  $('mmOk').addEventListener('click',function(){const {w:W,h:H}=mapSize();const z=mp.zoom,c=project(mp.lat,mp.lng,z),tl={x:c.x-W/2,y:c.y-H/2},n=Math.pow(2,z);
+    const cv=document.createElement('canvas');cv.width=W;cv.height=H;const ctx=cv.getContext('2d');ctx.fillStyle='#E8EBF0';ctx.fillRect(0,0,W,H);
+    const tx0=Math.floor(tl.x/256),tx1=Math.floor((tl.x+W)/256),ty0=Math.floor(tl.y/256),ty1=Math.floor((tl.y+H)/256);let ok=0;const jobs=[];
+    for(let tx=tx0;tx<=tx1;tx++)for(let ty=ty0;ty<=ty1;ty++){if(ty<0||ty>=n)continue;const wx=((tx%n)+n)%n;
+      jobs.push(new Promise(res=>{const img=new Image();img.crossOrigin='anonymous';img.onload=()=>{try{ctx.drawImage(img,tx*256-tl.x,ty*256-tl.y,256,256);ok++;}catch(e){}res();};img.onerror=()=>res();img.src=tileURL(z,wx,ty);}));}
+    $('mmOk').disabled=true;$('mmHint').textContent='擷取中…';
+    Promise.all(jobs).then(()=>{$('mmOk').disabled=false;
+      if(!ok){$('mmHint').textContent='地圖載入失敗（需連網，或圖磚被擋）';return;}
+      mp.pins.forEach((p,i)=>{const pp=project(p.lat,p.lng,z);drawPin(ctx,pp.x-tl.x,pp.y-tl.y,i+1);});
+      ctx.fillStyle='rgba(255,255,255,.85)';ctx.fillRect(0,H-20,W,20);ctx.fillStyle='#333';ctx.font='11px sans-serif';ctx.textAlign='left';ctx.fillText('© OpenStreetMap contributors · openstreetmap.org/copyright',8,H-6);
+      let url;try{url=cv.toDataURL('image/jpeg',0.85);}catch(err){$('mmHint').textContent='擷取失敗：此圖磚不允許跨來源擷取';return;}
+      closeMapModal();placeMapImage(url,W,H);});});
+
+  // ============ AI INBOX ============
+  let inboxHandle=null,inboxCards=[],inboxApproved=0,inboxSourceId=null;
+  const INBOX_FSA_KEY='inboxHandle';
+  function inboxSchemaText(){return `## AI 收件匣寫入格式說明（whiteboard-inbox.json）\n\n━━ 重要規則 ━━\n・請先讀取現有檔案，只在 inbox 陣列末尾「新增」項目\n・不要刪除或覆蓋現有項目（使用者審核後會自行移除）\n・若檔案不存在，從 {"version":1,"inbox":[]} 開始建立\n\n━━ JSON 格式 ━━\n{\n  "version": 1,\n  "inbox": [\n    {\n      "id": "唯一字串（8-12位英數，不可重複）",\n      "title": "卡片標題",\n      "blocks": [\n        {\n          "id": "唯一字串",\n          "type": "text",\n          "html": "內文（支援 <b>粗體</b> <i>斜體</i> <a href=\\"https://\\">連結</a>）",\n          "checked": false,\n          "src": ""\n        }\n      ],\n      "tags": ["標籤"],\n      "color": "amber",\n      "shape": "note",\n      "aiNote": "給使用者看的說明，不會出現在白板上",\n      "addedAt": ${Date.now()}\n    }\n  ]\n}\n\n━━ blocks type 選項 ━━\ntext h1 h2 h3  bullet number todo  quote callout code divider\n（todo 的 checked:true 代表已完成）\n\n━━ color 選項 ━━\npaper amber sage blue rose lavender grey\n\n━━ shape 選項 ━━\nnote（圓角預設） rect（直角） pill（膠囊）`;}
+  function updateInboxBadge(){const b=$('ibBadge');if(!b)return;const n=inboxCards.length;b.style.display=n?'':'none';b.textContent=n;}
+  const inboxQueue=Core.serial();
+  let inboxBusy=false;
+  async function linkInboxFile(){if(!FSA){showBanner('需要桌面版 Chrome 或 Edge 才能連結收件匣檔案。');return;}
+    try{const[h]=await window.showOpenFilePicker({types:[{description:'JSON 收件匣',accept:{'application/json':['.json']}}]});
+      const cards=Core.inbox(await (await h.getFile()).text());const previous=await idbGet(INBOX_FSA_KEY),previousId=await idbGet('inboxSourceId');
+      const sourceId=previous&&previousId&&await h.isSameEntry(previous)?previousId:uid();
+      await idbSet(INBOX_FSA_KEY,h);await idbSet('inboxSourceId',sourceId);inboxSourceId=sourceId;inboxHandle=h;inboxCards=cards;updateInboxBadge();renderInboxPanel();showBanner('已連結收件匣「'+h.name+'」');}catch(e){if(e.name!=='AbortError')reportError(e);}}
+  async function readInbox(){if(!inboxHandle)return false;
+    try{if(!await ensurePerm(inboxHandle))throw new Error('請重新授權收件匣檔案');inboxCards=Core.inbox(await (await inboxHandle.getFile()).text());updateInboxBadge();return true;}catch(e){reportError(e);return false;}}
+  function inboxDropPos(){let maxX=0;state.cards.forEach(c=>{const el=cardEls.get(c.id);maxX=Math.max(maxX,c.x+(el?el.offsetWidth:240));});return{x:(state.cards.length?maxX+80:200),y:80+inboxApproved*200};}
+  async function reviewCard(card,approve){return inboxQueue(async()=>{
+    if(inboxBusy||transitioning)return;inboxBusy=true;document.body.inert=true;
+    try{
+      const drive=!!gdInboxFileId;
+      if(drive&&!gdReady())throw new Error('請先重新登入 Drive');
+      const handle=inboxHandle, fileId=gdInboxFileId;
+      const source=(drive?'drive:'+fileId:'file:'+inboxSourceId)+':'+card.id;
+      let raw,etag;
+      if(drive){const r=await gdFetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`);raw=await r.text();etag=r.headers.get('etag');}
+      else{if(!handle||!await ensurePerm(handle))throw new Error('請重新連結收件匣');raw=await(await handle.getFile()).text();}
+      const latest=Core.inbox(raw);const current=latest.find(c=>c.id===card.id);
+      if(!current){inboxCards=latest;return;}
+      if(JSON.stringify(current)!==JSON.stringify(card))throw new Error('這張待審卡已被更新，請重新開啟收件匣後審核');
+      await Core.backup({board:state,inbox:Core.parse(raw)},'審核前備份');
+      if(approve&&!state.cards.some(c=>c.sourceInbox===source)){
+        const pos=inboxDropPos();inboxApproved++;
+        const c={...current,id:uid(),x:pos.x,y:pos.y,tags:[...new Set([...current.tags,'AI新增'])],collapsed:false,createdAt:now(),updatedAt:now(),sourceInbox:source};
+        state.cards.push(c);makeCardEl(c);updateHint();scheduleSave();save();
+      }
+      // Save the destination first. Retry is idempotent through sourceInbox.
+      if(approve){if(drive){if(!await gdWriteFile())throw new Error('白板尚未存入 Drive，待審卡已保留');}
+        else if(syncHandle){if(!await writeSyncFile())throw new Error('白板尚未存入同步檔，待審卡已保留');}
+        else if(!localSaved)throw new Error('白板尚未保存，待審卡已保留');}
+      // Re-read immediately before removing only this item, preserving new arrivals.
+      let newestRaw;
+      if(drive){const r=await gdFetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`);newestRaw=await r.text();etag=r.headers.get('etag');}
+      else newestRaw=await(await handle.getFile()).text();
+      const newest=Core.inbox(newestRaw),item=newest.find(c=>c.id===card.id);
+      if(item&&JSON.stringify(item)!==JSON.stringify(current))throw new Error('待審卡已更新，原項目已保留');
+      const remaining=newest.filter(c=>c.id!==card.id),body=JSON.stringify({version:1,inbox:remaining});
+      if(drive){await gdFetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,{method:'PATCH',headers:{'Content-Type':'application/json',...(etag?{'If-Match':etag}:{})},body});}
+      else{const w=await handle.createWritable();await w.write(body);await w.close();}
+      inboxCards=remaining;
+    }catch(e){reportError(e);}finally{inboxBusy=false;document.body.inert=false;updateInboxBadge();renderInboxPanel();}
+  });}
+  const approveCard=card=>reviewCard(card,true);
+  const rejectCard=id=>{const card=inboxCards.find(c=>c.id===id);return card?reviewCard(card,false):Promise.resolve();};
+
+  function renderInboxPanel(){const list=$('ibList'),empty=$('ibEmpty'),foot=$('ibFoot'),cnt=$('ibCnt');
+    cnt.textContent=inboxCards.length?' · '+inboxCards.length+' 張待審':'';
+    if(!inboxCards.length){list.replaceChildren();empty.style.display='';list.style.display='none';foot.style.display='none';
+      if(gdReady()&&gdInboxFileId) empty.innerHTML='<div>✓ 收件匣是空的，目前沒有待審卡片。</div>';
+      else if(gdReady()&&!gdInboxFileId) empty.innerHTML='<div>請先從「☁ Drive」選取一個白板，收件匣會自動連結。</div>';
+      else if(inboxHandle) empty.innerHTML='<div>✓ 收件匣是空的，目前沒有待審卡片。</div>';
+      else empty.innerHTML='<div>尚未連結收件匣檔案。<br><br>請點右上角「連結收件匣檔案」，選取你的 <b>whiteboard-inbox.json</b>。<br>點「複製格式說明」可取得給 AI 的完整指引。</div>';
+      return;}
+    empty.style.display='none';list.style.display='';foot.style.display='';
+    list.innerHTML='';inboxCards.forEach(card=>{const lbl=cardLabel(card);const prev=blocksText(card.blocks).trim().slice(0,80);
+      const el=document.createElement('div');el.className='ib-card';
+      el.innerHTML='<div class="ib-ct"><span class="ib-cdot" style="background:'+COLORS[card.color].bg+';border:1px solid '+COLORS[card.color].border+'"></span>'+
+        '<span class="ib-title">'+escapeHtml(lbl.text)+'</span></div>'+
+        (prev?'<div class="ib-prev">'+escapeHtml(prev)+(prev.length>=80?'…':'')+'</div>':'')+
+        (card.aiNote?'<div class="ib-note">💬 '+escapeHtml(card.aiNote)+'</div>':'')+
+        (card.tags.length?'<div class="ib-tags">'+card.tags.map(t=>'<span class="ib-tag">#'+escapeHtml(t)+'</span>').join('')+'</div>':'')+
+        '<div class="ib-acts"><button class="ib-ok">✓ 核准加入白板</button><button class="ib-no">✗ 刪除</button></div>';
+      el.querySelector('.ib-ok').addEventListener('click',()=>{approveCard(card);renderInboxPanel();});
+      el.querySelector('.ib-no').addEventListener('click',()=>{rejectCard(card.id);renderInboxPanel();});
+      list.appendChild(el);});}
+  function openInboxModal(){$('inboxModal').classList.add('open');updateInboxLink();
+    const doRead=gdInboxFileId?gdReadInbox():readInbox();
+    doRead.then(()=>{updateInboxBadge();renderInboxPanel();});}
+  function closeInboxModal(){$('inboxModal').classList.remove('open');}
+  $('ibClose').addEventListener('click',closeInboxModal);
+  $('inboxModal').addEventListener('pointerdown',e=>{if(e.target.id==='inboxModal')closeInboxModal();});
+  $('ibSchema').addEventListener('click',e=>copyText(inboxSchemaText(),e.currentTarget));
+  $('ibSchemaDl').addEventListener('click',()=>{const blob=new Blob([inboxSchemaText()],{type:'text/plain;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='收件匣格式說明.txt';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);});
+  function updateInboxLink(){const btn=$('ibLink');
+    if(gdCurrentFileName){btn.textContent=gdCurrentFileName.replace(/\.json$/,'')+' inbox';btn.style.cursor='default';btn.title='Drive 模式：收件匣已自動對應當前白板';}
+    else if(gdReady()&&!gdCurrentFileName){btn.textContent='請先選白板';btn.style.cursor='default';btn.title='';}
+    else{btn.textContent='連結收件匣檔案';btn.style.cursor='';btn.title='';}}
+  $('ibLink').addEventListener('click',()=>{if(!gdCurrentFileId)linkInboxFile();});
+  $('ibApproveAll').addEventListener('click',async()=>{for(const c of [...inboxCards])await approveCard(c);});
+  $('btnInbox').addEventListener('click',openInboxModal);
+  async function restoreInbox(){try{const h=await idbGet(INBOX_FSA_KEY);if(h&&!gdCurrentFileId&&!inboxBusy){inboxHandle=h;inboxSourceId=await idbGet('inboxSourceId')||uid();await idbSet('inboxSourceId',inboxSourceId);updateInboxLink();}}catch(e){reportError(e);}}
+
+  // ============ GOOGLE DRIVE SYNC ============
+  const GD_CLIENT_ID='1095634620472-blghk96rqsjbusfob1hpgstf88qoaunb.apps.googleusercontent.com';
+  const GD_SCOPE='https://www.googleapis.com/auth/drive.file';
+  const GD_FOLDER='聚思白板';
+  let gdToken=null,gdUser=null,gdFolderId=null,gdCurrentFileId=null,gdCurrentFileName=null,gdInboxFileId=null;
+  let gdWriteTimer=null,gdRefreshTimer=null,gdBaseline=null,gdConflict=false,gdLastSavedAt=null,gdSaving=false,gdError='';
+  const driveQueue=Core.serial();
+  const fileURL=id=>`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}`;
+  const uploadURL=id=>`https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(id)}?uploadType=media`;
+  const scheduleGdWrite=()=>{clearTimeout(gdWriteTimer);gdWriteTimer=setTimeout(()=>{if(!gdConflict)gdWriteFile();},1200);};
+  function gdReady(){return !!(gdToken&&gdToken.access_token);}
+  function gdInboxName(name){return name.replace(/\.json$/,'')+'-inbox.json';}
+  async function gdFetch(url,opts={}){
+    try{return await Core.request(url,opts,gdToken?.access_token);}
+    catch(e){if(e.status===401){gdToken=null;clearTimeout(gdRefreshTimer);updateDriveBtn();updateSaveStatus();}throw e;}
+  }
+  function gdLogin(){
+    if(!window.google?.accounts?.oauth2){showBanner('Google 登入服務載入中，請稍後再試。');return;}
+    const client=google.accounts.oauth2.initTokenClient({client_id:GD_CLIENT_ID,scope:GD_SCOPE,
+      callback:resp=>{
+        if(resp.error||!resp.access_token){reportError(new Error('Google 登入失敗，請重試'));return;}
+        gdToken=resp;gdUser={};gdFolderId=null;clearTimeout(gdRefreshTimer);
+        gdRefreshTimer=setTimeout(()=>{gdToken=null;updateDriveBtn();updateSaveStatus();showBanner('Drive 授權已到期，請按 Drive 重新登入；內容仍保留在本機。');},Math.max(1000,(Number(resp.expires_in)||3600)*1000));
+        updateDriveBtn();updateSaveStatus();openDriveModal();
+      },error_callback:()=>showBanner('Google 授權未完成，請按 Drive 重試')});
+    client.requestAccessToken();
+  }
+  async function gdLogout(){await transition(async()=>{clearTimeout(gdRefreshTimer);gdToken=null;gdUser=null;gdFolderId=null;clearDriveBinding();updateDriveBtn();closeDriveModal();});}
+  function clearDriveBinding(){clearTimeout(gdWriteTimer);gdCurrentFileId=null;gdCurrentFileName=null;gdInboxFileId=null;gdBaseline=null;gdDirty=false;gdConflict=false;gdError='';gdLastSavedAt=null;inboxCards=[];updateInboxBadge();updateSaveStatus();}
+  async function detachSources(){await unlinkSync();clearDriveBinding();updateDriveBtn();updateInboxLink();}
+  async function gdList(q,fields='id,name'){
+    const files=[];let pageToken='';
+    do{const params=new URLSearchParams({q,fields:`nextPageToken,files(${fields})`,pageSize:'100',orderBy:'modifiedTime desc'});if(pageToken)params.set('pageToken',pageToken);
+      const data=await(await gdFetch('https://www.googleapis.com/drive/v3/files?'+params)).json();files.push(...(data.files||[]));pageToken=data.nextPageToken||'';
+    }while(pageToken);return files;
+  }
+  async function gdEnsureFolder(){
+    if(gdFolderId)return gdFolderId;
+    const folders=await gdList(`name='${Core.queryValue(GD_FOLDER)}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+    if(folders.length>1)throw new Error('Drive 有多個「聚思白板」資料夾，請先整理後重試');
+    if(folders.length){gdFolderId=folders[0].id;return gdFolderId;}
+    const data=await(await gdFetch('https://www.googleapis.com/drive/v3/files',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:GD_FOLDER,mimeType:'application/vnd.google-apps.folder'})})).json();
+    if(!data.id)throw new Error('Drive 資料夾建立失敗');gdFolderId=data.id;return data.id;
+  }
+  async function gdListBoards(){const folder=await gdEnsureFolder();return(await gdList(`'${Core.queryValue(folder)}' in parents and mimeType='application/json' and trashed=false`,'id,name,modifiedTime,appProperties')).filter(f=>!f.name.endsWith('-inbox.json')&&f.appProperties?.juiceType!=='inbox');}
+  async function gdReadFile(fileId){return(await gdFetch(fileURL(fileId)+'?alt=media')).text();}
+  async function gdWriteFile(){
+    return driveQueue(async()=>{
+      if(!gdCurrentFileId)return false;if(!gdDirty)return true;
+      const fileId=gdCurrentFileId,version=editVersion,body=JSON.stringify(state);
+      gdSaving=true;gdError='';updateSaveStatus();
+      try{
+        if(gdConflict)throw new Error('同步衝突尚未處理。請先匯出目前白板，再重新開啟遠端白板');
+        const r=await gdFetch(fileURL(fileId)+'?alt=media'),remote=await r.text(),etag=r.headers.get('etag');
+        // Always preserve both candidates before any overwrite, including legacy files.
+        await Core.backup({local:Core.parse(body),remote:Core.parse(remote),fileId},'Drive 寫入前');
+        if(gdBaseline===null||remote!==gdBaseline){gdConflict=true;throw new Error('其他裝置已修改此白板，已停止覆寫。請匯出目前內容後，重新開啟遠端白板');}
+        await gdFetch(uploadURL(fileId),{method:'PATCH',headers:{'Content-Type':'application/json',...(etag?{'If-Match':etag}:{})},body});
+        gdBaseline=body;gdLastSavedAt=now();if(editVersion===version)gdDirty=false;
+        if(gdDirty)scheduleGdWrite();return true;
+      }catch(e){if(e.status===412)gdConflict=true;gdError=e.message;reportError(e);return false;}
+      finally{gdSaving=false;updateSaveStatus();}
+    });
+  }
+  async function gdFindInboxFile(boardName,boardId=gdCurrentFileId){
+    const folder=await gdEnsureFolder(),base=`'${Core.queryValue(folder)}' in parents and mimeType='application/json' and trashed=false`;
+    let files=boardId?await gdList(`${base} and appProperties has { key='juiceBoardId' and value='${Core.queryValue(boardId)}' }`):[];
+    if(!files.length)files=(await gdList(`${base} and name='${Core.queryValue(gdInboxName(boardName))}'`,'id,name,appProperties')).filter(f=>!f.appProperties?.juiceBoardId||f.appProperties.juiceBoardId===boardId);
+    if(files.length>1)throw new Error('找到多份同名收件匣，請先整理後重試');return files[0]?.id||null;
+  }
+  async function gdCreateJSON(name,value,properties={}){
+    const folder=await gdEnsureFolder(),form=new FormData();
+    form.append('metadata',new Blob([JSON.stringify({name,parents:[folder],mimeType:'application/json',appProperties:properties})],{type:'application/json'}));
+    form.append('media',new Blob([JSON.stringify(value)],{type:'application/json'}));
+    const data=await(await gdFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',{method:'POST',body:form})).json();
+    if(!data.id)throw new Error('Drive 檔案建立失敗');return data;
+  }
+  async function gdCreateInboxFile(name,boardId){return(await gdCreateJSON(gdInboxName(name),{version:1,inbox:[]},{juiceType:'inbox',juiceBoardId:boardId})).id;}
+  async function gdReadInbox(){
+    if(!gdInboxFileId)return false;
+    try{inboxCards=Core.inbox(await gdReadFile(gdInboxFileId));updateInboxBadge();return true;}catch(e){reportError(e);return false;}
+  }
+  async function gdCreateBoard(name){
+    if(name.endsWith('-inbox'))throw new Error('白板名稱不能以 -inbox 結尾');
+    if((await gdListBoards()).some(b=>b.name===name+'.json'))throw new Error('已有同名白板，請使用其他名稱');
+    const empty=normalize({cards:[]});empty.savedAt=now();return gdCreateJSON(name+'.json',empty,{juiceType:'board'});
+  }
+  async function gdDeleteBoard(fileId,fileName){
+    const inboxId=await gdFindInboxFile(fileName,fileId);
+    // Trash rather than permanently delete; recoverable from Drive Trash.
+    for(const id of [fileId,inboxId].filter(Boolean))await gdFetch(fileURL(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({trashed:true})});
+    if(gdCurrentFileId===fileId){clearDriveBinding();updateDriveBtn();}
+  }
+  async function gdLoadBoard(fileId,fileName){
+    if(transitioning||inboxBusy)return false;
+    // A conflict can only be discarded explicitly, after a recovery snapshot exists.
+    if(gdConflict&&gdCurrentFileId===fileId){
+      await Core.backup(state,'使用者重載衝突白板前');
+      if(!confirm('目前內容已保留復原快照。要放棄尚未同步的編輯，重新載入 Drive 版本嗎？'))return false;
+      gdDirty=false;gdConflict=false;
+    }
+    return transition(async()=>{
+      const raw=await gdReadFile(fileId),next=normalize(Core.parse(raw));
+      let inboxId=await gdFindInboxFile(fileName,fileId);if(!inboxId)inboxId=await gdCreateInboxFile(fileName,fileId);
+      const cards=Core.inbox(await gdReadFile(inboxId));
+      await unlinkSync(); // A Drive board must never inherit a local file destination.
+      state=next;gdCurrentFileId=fileId;gdCurrentFileName=fileName;gdInboxFileId=inboxId;gdBaseline=raw;
+      gdDirty=false;gdConflict=false;gdError='';gdLastSavedAt=null;editVersion++;inboxCards=cards;
+      resetScene();updateDriveBtn();updateInboxLink();updateInboxBadge();updateSaveStatus();showBanner('已載入白板「'+fileName.replace(/\.json$/,'')+'」');
+    });
+  }
+  function updateDriveBtn(){
+    const name=gdCurrentFileName?.replace(/\.json$/,'')||'';
+    $('driveBtnLbl').textContent=(gdReady()?name||'Drive':gdCurrentFileId?'Drive（需登入）':'Drive');
+    $('boardName').textContent=name?'· '+name:'';document.title=name?name+' · 聚思':'聚思';
+    $('driveAvatar').style.display='none';$('driveCloudIcon').style.display='';
+  }
+  async function renderDriveModal(){
+    $('drvLogin').style.display=gdReady()?'none':'';$('drvLoggedIn').style.display=gdReady()?'':'none';if(!gdReady())return;
+    $('drvUserRow').textContent='已授權 Google Drive';const list=$('drvBoardList');list.textContent='載入中…';
+    try{const boards=await gdListBoards();list.replaceChildren();if(!boards.length)list.textContent='尚無白板，請新增白板。';
+      for(const b of boards){const row=document.createElement('div');row.className='drv-board'+(gdCurrentFileId===b.id?' active':'');
+        const label=document.createElement('div');label.className='drv-board-name';label.textContent=b.name.replace(/\.json$/,'');
+        const meta=document.createElement('div');meta.className='drv-board-meta';meta.textContent=new Date(b.modifiedTime).toLocaleString()+' 修改';
+        const info=document.createElement('div');info.append(label,meta);const del=document.createElement('button');del.className='drv-board-del';del.textContent='🗑';del.title='移到 Drive 垃圾桶';row.append(info,del);
+        del.addEventListener('click',async e=>{e.stopPropagation();if(!confirm('將白板「'+b.name+'」與收件匣移到 Drive 垃圾桶？'))return;
+          await transition(()=>gdDeleteBoard(b.id,b.name));renderDriveModal();});
+        row.addEventListener('click',async()=>{try{if(await gdLoadBoard(b.id,b.name))closeDriveModal();}catch(e){reportError(e);}});list.appendChild(row);
+      }
+    }catch(e){list.textContent='載入失敗，請關閉後重試。';reportError(e);}
+  }
+  function openDriveModal(){$('driveModal').classList.add('open');renderDriveModal();}
+  function closeDriveModal(){$('driveModal').classList.remove('open');}
+  $('drvClose').addEventListener('click',closeDriveModal);
+  $('driveModal').addEventListener('pointerdown',e=>{if(e.target.id==='driveModal')closeDriveModal();});
+  $('drvLoginBtn').addEventListener('click',gdLogin);$('drvLogout').addEventListener('click',gdLogout);
+  $('btnDrive').addEventListener('click',()=>{if(gdReady())openDriveModal();else gdLogin();});
+  $('drvNewBoard').addEventListener('click',async()=>{
+    const name=prompt('白板名稱：','新白板')?.trim();if(!name)return;if(name.length>200){showBanner('白板名稱請限制在 200 字內');return;}
+    let file;const ok=await transition(async()=>{file=await gdCreateBoard(name);});if(ok&&await gdLoadBoard(file.id,name+'.json'))closeDriveModal();
+  });
+  function fmtAgo(ts){if(!ts)return '尚未寫入 Drive';const seconds=Math.floor((now()-ts)/1000);return seconds<10?'剛剛儲存':seconds<60?seconds+'秒前儲存':Math.floor(seconds/60)+'分鐘前儲存';}
+  function updateSaveStatus(){
+    const active=!!gdCurrentFileId;$('saveStatus').style.display=active?'':'none';$('btnSaveNow').style.display=active?'':'none';
+    $('btnSaveNow').classList.toggle('saving',gdSaving);$('btnSaveNow').disabled=gdSaving;
+    $('saveStatus').textContent=!gdReady()?'需重新登入':gdSaving?'儲存中…':gdConflict?'同步衝突':gdError?'同步失敗，請重試':gdDirty?'尚未同步':fmtAgo(gdLastSavedAt);
+  }
+  $('btnSaveNow').addEventListener('click',async()=>{if(!gdReady()){gdLogin();return;}if(saveTimer)save();if(await gdWriteFile())showBanner('已儲存到 Drive ✓');});
+  setInterval(updateSaveStatus,30000);
+
+  // ============ LOCAL JSON SYNC ============
+  const FSA=!!(window.showOpenFilePicker&&window.showSaveFilePicker);
+  const idbGet=Core.get,idbSet=Core.set,idbDel=Core.del;
+  let fileWriteTimer=null,fileBaseline=null,fileConflict=false;
+  const fileQueue=Core.serial();
+  async function ensurePerm(h){if(!h)return false;try{const options={mode:'readwrite'};return await h.queryPermission(options)==='granted'||await h.requestPermission(options)==='granted';}catch(e){return false;}}
+  function updateSyncBtn(status){const dot=$('syncDot');if(dot)dot.style.background=status==='ok'?'#5BB97E':status==='need'?'#E0A82E':status==='error'?'#D2453E':'#C2C8D2';}
+  const scheduleFileWrite=()=>{clearTimeout(fileWriteTimer);fileWriteTimer=setTimeout(()=>writeSyncFile(),800);};
+  async function writeSyncFile(){return fileQueue(async()=>{
+    if(!syncHandle)return false;if(!fileDirty)return true;
+    const handle=syncHandle,version=editVersion,body=JSON.stringify(state);
+    try{
+      if(fileConflict)throw new Error('同步檔發生衝突。請匯出目前內容後，解除連結並重新開啟檔案');
+      if(!await ensurePerm(handle)){syncReady=false;updateSyncBtn('need');throw new Error('請重新授權同步檔案');}
+      const raw=await(await handle.getFile()).text();
+      await Core.backup({local:Core.parse(body),remote:raw?Core.parse(raw):null,fileName:handle.name},'同步檔寫入前');
+      if(fileBaseline===null||raw!==fileBaseline){fileConflict=true;throw new Error('同步檔已被其他裝置修改，已停止覆寫；兩份內容已保留復原備份');}
+      const writer=await handle.createWritable();await writer.write(body);await writer.close();fileBaseline=body;
+      if(editVersion===version)fileDirty=false;else scheduleFileWrite();updateSyncBtn('ok');return true;
+    }catch(e){updateSyncBtn('error');reportError(e);return false;}
+  });}
+  async function readAndMaybeLoad(){
+    if(!syncHandle||transitioning||inboxBusy)return false;lastRead=now();
+    try{
+      if(!await ensurePerm(syncHandle)){syncReady=false;updateSyncBtn('need');return false;}syncReady=true;
+      const raw=await(await syncHandle.getFile()).text();if(raw===fileBaseline){if(fileDirty)return writeSyncFile();return true;}
+      if(fileDirty){await Core.backup({local:state,remote:Core.parse(raw)},'同步檔衝突');fileConflict=true;throw new Error('同步檔與目前編輯不同，已停止載入及覆寫，請匯出目前內容');}
+      const next=normalize(Core.parse(raw));await Core.backup(state,'載入同步檔前');
+      // Changes may have happened during the read/backup.
+      if(fileDirty)throw new Error('讀取時有新編輯，請稍後重新同步');
+      state=next;fileBaseline=raw;fileConflict=false;editVersion++;resetScene();updateSyncBtn('ok');return true;
+    }catch(e){updateSyncBtn('error');reportError(e);return false;}
+  }
+  async function linkNewFile(){
+    if(!FSA){showBanner('此瀏覽器不支援連結同步檔，請用桌面版 Chrome 或 Edge。');return;}
+    try{const handle=await window.showSaveFilePicker({suggestedName:'whiteboard-sync.json',types:[{description:'JSON',accept:{'application/json':['.json']}}]});
+      await transition(async()=>{
+        const raw=await(await handle.getFile()).text();if(raw)throw new Error('此檔案已有內容，請使用「連結現有同步檔」，避免覆蓋');
+        await detachSources();syncHandle=handle;syncReady=true;fileBaseline=raw;fileDirty=true;state.savedAt=now();
+        if(!await writeSyncFile())throw new Error('同步檔建立失敗，請重試');await idbSet('syncHandle',handle);showBanner('已建立同步檔「'+handle.name+'」。跨裝置使用需將檔案放在雲端同步資料夾。');
+      });
+    }catch(e){if(e.name!=='AbortError')reportError(e);}
+  }
+  async function linkExistingFile(){
+    if(!FSA){showBanner('此瀏覽器不支援連結同步檔，請用桌面版 Chrome 或 Edge。');return;}
+    try{const[handle]=await window.showOpenFilePicker({types:[{description:'JSON',accept:{'application/json':['.json']}}]});
+      await transition(async()=>{const raw=await(await handle.getFile()).text(),next=normalize(Core.parse(raw));
+        if(!await ensurePerm(handle))throw new Error('請授權同步檔');await detachSources();
+        syncHandle=handle;syncReady=true;fileBaseline=raw;fileDirty=false;state=next;editVersion++;await idbSet('syncHandle',handle);resetScene();updateSyncBtn('ok');showBanner('已載入同步檔「'+handle.name+'」');
+      });
+    }catch(e){if(e.name!=='AbortError')reportError(e);}
+  }
+  async function reconnectSync(){
+    if(!syncHandle)return;
+    if(await readAndMaybeLoad())showBanner('同步檔已連結');
+  }
+  async function syncNow(){if(saveTimer)save();if(await readAndMaybeLoad()&&fileDirty)await writeSyncFile();}
+  async function unlinkSync(){clearTimeout(fileWriteTimer);syncHandle=null;syncReady=false;fileBaseline=null;fileDirty=false;fileConflict=false;await idbDel('syncHandle');updateSyncBtn('none');}
+  $('btnSync').addEventListener('click',function(){const r=this.getBoundingClientRect(),items=[];
+    if(!FSA){showMenu([{label:'此瀏覽器不支援，請用 Chrome／Edge'}],r.left,r.bottom+4,'跨裝置同步');return;}
+    if(!syncHandle){items.push({icon:'＋',label:'建立新的同步檔',onClick:linkNewFile},{icon:'⇄',label:'連結現有同步檔',onClick:linkExistingFile});}
+    else{items.push({icon:'⟳',label:syncReady?'立即同步':'重新連結並同步',onClick:syncReady?syncNow:reconnectSync});
+      items.push({sep:true},{icon:'✕',label:'解除連結（保留目前白板）',danger:true,onClick:async()=>{
+        try{if(saveTimer)save();await Core.backup(state,'解除同步檔前');await fileQueue(async()=>{});await unlinkSync();}catch(e){reportError(e);}
+      }});
+    }
+    showMenu(items,r.left,r.bottom+4,syncHandle?'同步檔：'+syncHandle.name:'設定同步（單人跨裝置）');
+  });
+  window.addEventListener('focus',()=>{if(syncReady&&now()-lastRead>1500)readAndMaybeLoad();});
+  async function restoreSync(){
+    if(!FSA)return;try{const handle=await idbGet('syncHandle');if(handle){
+      // Do not silently replace a cached board on reload. Explicitly reopen it.
+      showBanner('上次同步檔為「'+handle.name+'」。目前保留本機內容，請由同步選單重新連結檔案。');
+    }}catch(e){reportError(e);}
+  }
+
+  // ---------- init ----------
+  buildCardbar();load();buildScene();
+  if(!state.cards.length){state.view={x:40,y:40,zoom:1};applyView();}
+  idleStatus();
+  if(loadFailed){world.inert=true;panel.inert=true;}
+  restoreSync();restoreInbox();
+})();

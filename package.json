@@ -1,0 +1,11 @@
+{
+  "name": "juice-whiteboard",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "check": "node --check assets/core.js && node --check assets/app.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1"
+  }
+}
