@@ -147,3 +147,23 @@ test('legacy text and rich HTML migrate without active attributes',async({page})
 test('toolbar remains scrollable at phone width',async({page})=>{
   await mockDrive(page);await page.setViewportSize({width:390,height:844});await boot(page);await page.locator('#btnRecovery').click();await expect(page.locator('#banner')).toHaveText('目前還沒有復原快照');await page.locator('#btnAdd').click();await expect(page.locator('#panel')).toHaveClass('open');await expect(page.locator('#pClose')).toBeInViewport();
 });
+
+async function selectionBoard(page,view={x:0,y:0,zoom:1}){
+  await mockDrive(page);await page.addInitScript(data=>localStorage.setItem('sju-whiteboard-v2',JSON.stringify(data)),{cards:[{id:'one',x:100,y:100,title:'One'},{id:'two',x:400,y:100,title:'Two'},{id:'three',x:800,y:400,title:'Three'}],view});await boot(page);
+}
+async function rectangle(page,x1,y1,x2,y2){await page.mouse.move(x1,y1);await page.mouse.down();await page.mouse.move(x2,y2,{steps:8});await page.mouse.up();}
+test('marquee selects multiple cards and dragging moves them together',async({page})=>{
+  await selectionBoard(page);await page.locator('#btnSelect').click();await rectangle(page,80,132,660,300);await expect(page.locator('.card.sel')).toHaveCount(2);await expect(page.locator('#btnGroup')).toBeEnabled();
+  const box=await page.locator('[data-id="one"].card').boundingBox();await rectangle(page,box.x+40,box.y+25,box.x+100,box.y+65);await page.waitForTimeout(500);const data=await stored(page);expect(data.cards.map(c=>[c.x,c.y])).toEqual([[160,140],[460,140],[800,400]]);
+  await page.locator('#btnSelect').click();await rectangle(page,700,350,730,380);await page.waitForTimeout(500);expect((await stored(page)).view).toMatchObject({x:30,y:30});
+});
+test('Shift drag supports reverse selection and adding to the selection',async({page})=>{
+  await selectionBoard(page);await page.keyboard.down('Shift');await rectangle(page,350,300,80,132);await page.keyboard.up('Shift');await expect(page.locator('.card.sel')).toHaveCount(1);
+  await page.keyboard.down('Shift');await rectangle(page,380,132,660,300);await page.keyboard.up('Shift');await expect(page.locator('.card.sel')).toHaveCount(2);await expect(page.locator('#btnSelect')).toHaveAttribute('aria-pressed','false');
+});
+test('marquee works after pan and zoom, empty click clears selection',async({page})=>{
+  await selectionBoard(page,{x:50,y:40,zoom:0.5});await page.locator('#btnSelect').click();await rectangle(page,90,132,380,210);await expect(page.locator('.card.sel')).toHaveCount(2);await page.mouse.click(700,350);await expect(page.locator('.card.sel')).toHaveCount(0);await expect(page.locator('#selectionBox')).toBeHidden();
+});
+test('Escape cancels the current rectangle and restores previous selection',async({page})=>{
+  await selectionBoard(page);await page.locator('#btnSelect').click();await rectangle(page,80,132,350,300);await expect(page.locator('.card.sel')).toHaveCount(1);await page.mouse.move(700,350);await page.mouse.down();await page.mouse.move(1100,600);await page.keyboard.press('Escape');await page.mouse.up();await expect(page.locator('.card.sel')).toHaveCount(1);await expect(page.locator('#selectionBox')).toBeHidden();
+});

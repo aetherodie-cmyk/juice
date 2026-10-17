@@ -334,3 +334,8 @@
   .actions{min-width:0;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;}
   .actions > *{flex-shrink:0;}
 }
+
+#canvas.selecting{cursor:crosshair;}
+#selectionBox{position:absolute;border:1px solid var(--accent);background:rgba(76,99,210,.12);pointer-events:none;z-index:30;}
+#selectionBox[hidden]{display:none;}
+#btnSelect[aria-pressed="true"]{background:var(--accent);color:white;}

@@ -467,27 +467,55 @@
     gdrag.inside.forEach(it=>{it.c.x=Math.round(it.ox+dx);it.c.y=Math.round(it.oy+dy);placeCard(it.c);refreshLinksFor(it.c.id);});}
   function onGroupUp(){window.removeEventListener('pointermove',onGroupMove);window.removeEventListener('pointerup',onGroupUp);if(gdrag&&gdrag.moved)scheduleSave();gdrag=null;}
 
+  // Marquee selection uses client coordinates so pan/zoom and card sizes stay aligned.
+  let selectMode=false,marquee=null;
+  const selectionBox=$('selectionBox');
+  function setSelectMode(value){selectMode=value;$('btnSelect').setAttribute('aria-pressed',String(value));canvas.classList.toggle('selecting',value);}
+  $('btnSelect').addEventListener('click',()=>setSelectMode(!selectMode));
+  function finishMarquee(cancel=false){
+    if(!marquee)return;
+    if(cancel){selection.forEach(id=>cardEls.get(id)?.classList.remove('sel'));selection=new Set(marquee.before);selection.forEach(id=>cardEls.get(id)?.classList.add('sel'));}
+    marquee=null;selectionBox.hidden=true;showCardbar();updateGroupBtn();
+  }
+  function moveMarquee(e){
+    const m=marquee;if(!m||m.pointerId!==e.pointerId)return;
+    const r=canvas.getBoundingClientRect(),x=Math.max(r.left,Math.min(r.right,e.clientX)),y=Math.max(r.top,Math.min(r.bottom,e.clientY));
+    const left=Math.min(m.x,x),top=Math.min(m.y,y),right=Math.max(m.x,x),bottom=Math.max(m.y,y);
+    if(!m.moved&&Math.hypot(x-m.x,y-m.y)<4)return;m.moved=true;
+    Object.assign(selectionBox.style,{left:(left-r.left)+'px',top:(top-r.top)+'px',width:(right-left)+'px',height:(bottom-top)+'px'});selectionBox.hidden=false;
+    const next=new Set(m.additive?m.before:[]);
+    cardEls.forEach((el,id)=>{const b=el.getBoundingClientRect();if(b.right>left&&b.left<right&&b.bottom>top&&b.top<bottom)next.add(id);});
+    selection=next;cardEls.forEach((el,id)=>el.classList.toggle('sel',selection.has(id)));updateGroupBtn();
+  }
+
   // ---------- pointer: canvas ----------
   const pointers=new Map();let pan=null,pinch=null,lastTap=0,lastTapPos=null;
   canvas.addEventListener('pointerdown',e=>{if(e.target.closest('.card')||e.target.closest('.group'))return;
+    if(e.pointerType==='mouse'&&e.button!==0)return;
+    if(marquee){finishMarquee(true);}
+    if((selectMode||e.shiftKey)&&pointers.size===0){
+      const before=new Set(selection);clearSelection();if(e.shiftKey){selection=before;selection.forEach(id=>cardEls.get(id)?.classList.add('sel'));}
+      marquee={pointerId:e.pointerId,x:e.clientX,y:e.clientY,before,additive:e.shiftKey,moved:false};hideCardbar();canvas.setPointerCapture(e.pointerId);e.preventDefault();return;
+    }
     pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
     if(e.pointerType!=='mouse'){const t=Date.now();if(t-lastTap<300&&lastTapPos&&Math.hypot(e.clientX-lastTapPos.x,e.clientY-lastTapPos.y)<24){const w=screenToWorld(e.clientX,e.clientY);addCard(w.x,w.y);lastTap=0;return;}lastTap=t;lastTapPos={x:e.clientX,y:e.clientY};}
     if(pointers.size===2){const pts=[...pointers.values()];pinch={d0:Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y),z0:state.view.zoom,cx:(pts[0].x+pts[1].x)/2,cy:(pts[0].y+pts[1].y)/2};pan=null;return;}
     clearSelection();pan={x:e.clientX,y:e.clientY,vx:state.view.x,vy:state.view.y};canvas.classList.add('panning');canvas.setPointerCapture(e.pointerId);});
-  canvas.addEventListener('pointermove',e=>{if(pointers.has(e.pointerId))pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  canvas.addEventListener('pointermove',e=>{if(marquee){moveMarquee(e);return;}if(pointers.has(e.pointerId))pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
     if(pinch&&pointers.size>=2){const pts=[...pointers.values()];const d=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);setZoom(pinch.z0*(d/pinch.d0),pinch.cx,pinch.cy);return;}
     if(pan){state.view.x=pan.vx+(e.clientX-pan.x);state.view.y=pan.vy+(e.clientY-pan.y);applyView();}});
-  function endPointer(e){pointers.delete(e.pointerId);if(pointers.size<2)pinch=null;if(pan){canvas.classList.remove('panning');pan=null;scheduleSave();}}
+  function endPointer(e){if(marquee&&marquee.pointerId===e.pointerId){if(e.type==='pointerup')moveMarquee(e);finishMarquee(e.type==='pointercancel');return;}pointers.delete(e.pointerId);if(pointers.size<2)pinch=null;if(pan){canvas.classList.remove('panning');pan=null;scheduleSave();}}
   canvas.addEventListener('pointerup',endPointer);canvas.addEventListener('pointercancel',endPointer);
-  canvas.addEventListener('dblclick',e=>{if(e.target.closest('.card')||e.target.closest('.group')||e.target.closest('#linkLayer'))return;const w=screenToWorld(e.clientX,e.clientY);addCard(w.x,w.y);});
-  canvas.addEventListener('wheel',e=>{e.preventDefault();if(e.ctrlKey||e.metaKey){setZoom(state.view.zoom*(e.deltaY<0?1.1:0.9),e.clientX,e.clientY);}else{state.view.x-=e.deltaX;state.view.y-=e.deltaY;applyView();scheduleSave();}},{passive:false});
+  canvas.addEventListener('lostpointercapture',e=>{if(marquee?.pointerId===e.pointerId)finishMarquee(true);});
+  canvas.addEventListener('dblclick',e=>{if(selectMode||e.shiftKey)return;if(e.target.closest('.card')||e.target.closest('.group')||e.target.closest('#linkLayer'))return;const w=screenToWorld(e.clientX,e.clientY);addCard(w.x,w.y);});
+  canvas.addEventListener('wheel',e=>{e.preventDefault();if(marquee)return;if(e.ctrlKey||e.metaKey){setZoom(state.view.zoom*(e.deltaY<0?1.1:0.9),e.clientX,e.clientY);}else{state.view.x-=e.deltaX;state.view.y-=e.deltaY;applyView();scheduleSave();}},{passive:false});
 
   // ---------- keyboard ----------
   window.addEventListener('keydown',e=>{const ae=document.activeElement;
     const typing=ae&&(ae.getAttribute('contenteditable')==='true'||ae.tagName==='INPUT'||ae.tagName==='TEXTAREA');
     if(typing){if(e.key==='Escape')ae.blur();return;}
     if(e.key==='Delete'||e.key==='Backspace'){if(selectedLink){e.preventDefault();deleteLink(selectedLink);}else if(selectedImage){e.preventDefault();deleteImage(selectedImage);}else if(selection.size||selectedGroup){e.preventDefault();deleteSelection();}}
-    else if(e.key==='Escape'){if($('mapModal').classList.contains('open'))closeMapModal();else if(activeMenu)closeMenu();else if($('tagPanel').classList.contains('open'))closeTagPanel();else if(panel.classList.contains('open'))closePanel();else clearSelection();}
+    else if(e.key==='Escape'){if(marquee){finishMarquee(true);return;}if(selectMode){setSelectMode(false);clearSelection();return;}if($('mapModal').classList.contains('open'))closeMapModal();else if(activeMenu)closeMenu();else if($('tagPanel').classList.contains('open'))closeTagPanel();else if(panel.classList.contains('open'))closePanel();else clearSelection();}
     else if(e.key==='g'||e.key==='G'){if(selection.size>=2)makeGroup();}});
 
   // ---------- toolbar ----------
