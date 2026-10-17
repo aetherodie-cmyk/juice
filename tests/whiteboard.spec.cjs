@@ -198,3 +198,20 @@ test('continuous title typing is one board undo step',async({page})=>{
 test('undo deletion restores card content and connecting links together',async({page})=>{
   await mockDrive(page);await page.addInitScript(()=>localStorage.setItem('sju-whiteboard-v2',JSON.stringify({cards:[{id:'one',x:100,y:100,title:'One'},{id:'two',x:400,y:100,title:'Two'}],links:[{id:'link',from:'one',to:'two',label:'keep connection',dir:'both'}]})));await boot(page);await page.locator('[data-id="one"].card').click();await page.keyboard.press('Delete');await expect(page.locator('.card')).toHaveCount(1);await page.locator('#btnUndo').click();await expect(page.locator('.card')).toHaveCount(2);await page.waitForTimeout(500);expect((await stored(page)).links).toEqual([{id:'link',from:'one',to:'two',dir:'both',label:'keep connection'}]);
 });
+
+test('compact panel exposes everyday controls without scrolling at phone size',async({page})=>{
+  await mockDrive(page);await page.setViewportSize({width:390,height:600});await boot(page);await page.locator('#btnAdd').click();await page.locator('#pTitle').fill('biz1');await expect(page.locator('#pDuplicate')).toBeInViewport();await expect(page.locator('#pDelete')).toBeInViewport();await expect(page.locator('#pShapes')).toBeInViewport();await expect(page.locator('#tagInput')).toBeInViewport();await expect(page.locator('#pAddLink')).toBeInViewport();await expect(page.locator('#infoToggle')).toBeInViewport();
+  expect(await page.locator('.pbody').evaluate(el=>el.scrollHeight<=el.clientHeight)).toBe(true);
+  const sections=await page.locator('.pbody > .psec').evaluateAll(els=>els.map(el=>el.id||el.textContent));expect(sections.at(-1)).toBe('infoSec');
+  await page.locator('#pSwatches').getByRole('button',{name:'淺藍'}).click();await page.locator('#pShapes').getByRole('button',{name:'直角'}).click();await page.waitForTimeout(450);expect((await stored(page)).cards[0]).toMatchObject({color:'blue',shape:'rect'});
+  await page.locator('#infoToggle').click();await expect(page.locator('#iCreated')).toBeVisible();await page.locator('#infoToggle').press('Enter');await expect(page.locator('#iCreated')).toBeHidden();await expect(page.locator('#cardbar')).toBeHidden();await page.locator('#infoToggle').evaluate(el=>el.blur());await page.locator('#panel').screenshot({path:'/tmp/juice-compact-panel.png'});
+});
+test('panel controls stay available while reading long content',async({page})=>{
+  await mockDrive(page);await page.addInitScript(()=>localStorage.setItem('sju-whiteboard-v2',JSON.stringify({cards:[{id:'long',x:100,y:100,title:'Long card',blocks:Array.from({length:60},(_,i)=>({id:'line'+i,type:'text',html:'Content line '+i}))}]})));await boot(page);await page.locator('.card').dblclick();await page.locator('.pbody').evaluate(el=>el.scrollTop=el.scrollHeight);await expect(page.locator('#pDuplicate')).toBeInViewport();await expect(page.locator('#pDelete')).toBeInViewport();await expect(page.locator('#pSwatches')).toBeInViewport();await expect(page.locator('#pShapes')).toBeInViewport();await expect(page.locator('#rtbar')).toBeInViewport();
+});
+test('panel creates links with a picker and can undo them',async({page})=>{
+  await selectionBoard(page);await page.locator('[data-id="one"].card').dblclick();await page.locator('#pAddLink').click();await page.locator('.bmenu').getByText('Two',{exact:true}).click();await expect(page.locator('#pConn .crow')).toHaveText('Two');await page.waitForTimeout(450);expect((await stored(page)).links[0]).toMatchObject({from:'one',to:'two'});await page.locator('#btnUndo').click();await expect(page.locator('#pConn')).toHaveText('尚無關聯');
+});
+test('panel duplicate button copies the open card',async({page})=>{
+  await selectionBoard(page);await page.locator('[data-id="one"].card').dblclick();await page.locator('#pDuplicate').click();await expect(page.locator('.card')).toHaveCount(4);await page.waitForTimeout(450);expect((await stored(page)).cards[3]).toMatchObject({title:'One',x:132,y:132});
+});

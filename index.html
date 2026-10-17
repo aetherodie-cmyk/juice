@@ -117,7 +117,11 @@
   </div>
 
   <div id="panel">
-    <div class="ph"><span class="pdot" id="pHeadDot"></span><span class="plbl">卡片</span><button class="pclose" id="pClose">收起</button></div>
+    <div class="ph"><span class="pdot" id="pHeadDot"></span><span class="plbl">卡片</span><div class="pactions"><button id="pDuplicate" title="複製這張卡片">複製</button><button id="pDelete" title="刪除這張卡片">刪除</button><button class="pclose" id="pClose">收起</button></div></div>
+    <div class="ptools" aria-label="卡片外觀">
+      <div class="ptoolrow"><span class="ptoollabel">顏色</span><div class="pswatches" id="pSwatches"></div></div>
+      <div class="ptoolrow"><span class="ptoollabel">形狀</span><div class="pshapes" id="pShapes"></div></div>
+    </div>
     <div class="pbody">
       <textarea id="pTitle" maxlength="10000" rows="1" placeholder="標題"></textarea>
       <div class="rtbar" id="rtbar">
@@ -133,19 +137,18 @@
         <span class="cdot" data-color="#4C63D2" style="background:#4C63D2"></span>
       </div>
       <div id="pBlocks"></div>
-      <div class="addblk" id="addBlk">＋ 新增區塊</div>
+      <button class="addblk" id="addBlk">＋ 新增區塊</button>
 
+      <div class="psec"><h4>標籤</h4><div class="tags" id="pTags"></div></div>
+      <div class="psec"><div class="psec-head"><h4>關聯卡片</h4><button class="pmini" id="pAddLink">＋ 建立關聯</button></div><div id="pConn"></div></div>
       <div class="psec collapsed" id="infoSec">
-        <div class="psec-head" id="infoToggle"><h4>資訊</h4><span class="chev">▾</span></div>
+        <div class="psec-head" id="infoToggle"><h4>時間與字數</h4><span class="chev">▾</span></div>
         <div class="psec-body">
           <div class="irow"><span class="k">建立時間</span><span class="v" id="iCreated">—</span></div>
           <div class="irow"><span class="k">更新時間</span><span class="v" id="iUpdated">—</span></div>
           <div class="irow"><span class="k">字數統計</span><span class="v" id="iCount">—</span></div>
         </div>
       </div>
-      <div class="psec"><h4>標籤</h4><div class="tags" id="pTags"></div></div>
-      <div class="psec"><h4>關聯卡片</h4><div id="pConn"></div></div>
-      <div class="psec"><h4>外觀</h4><div class="pswatches" id="pSwatches"></div><div class="pshapes" id="pShapes"></div><button id="pDelete">刪除這張卡片</button></div>
     </div>
   </div>
 

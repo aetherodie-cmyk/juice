@@ -306,7 +306,7 @@
     del.addEventListener('pointerdown',e=>{e.stopPropagation();e.preventDefault();deleteSelection();});cardbar.appendChild(del);}
   function markSwatch(){const cs=[...selection].map(id=>byId(state.cards,id).color);const same=cs.every(c=>c===cs[0])?cs[0]:null;
     cardbar.querySelectorAll('.swatch').forEach(s=>s.classList.toggle('on',s.dataset.color===same));}
-  function showCardbar(){if(selection.size===0){hideCardbar();return;}let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
+  function showCardbar(){if(panel.classList.contains('open')){hideCardbar();return;}if(selection.size===0){hideCardbar();return;}let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
     selection.forEach(id=>{const c=byId(state.cards,id),el=cardEls.get(id);minx=Math.min(minx,c.x);miny=Math.min(miny,c.y);maxx=Math.max(maxx,c.x+el.offsetWidth);maxy=Math.max(maxy,c.y+el.offsetHeight);});
     const r=canvas.getBoundingClientRect();const sx=r.left+state.view.x+((minx+maxx)/2)*state.view.zoom,sy=r.top+state.view.y+miny*state.view.zoom;
     cardbar.style.display='flex';cardbar.style.left=Math.max(8,Math.min(innerWidth-cardbar.offsetWidth-8,sx-cardbar.offsetWidth/2))+'px';const top=sy-cardbar.offsetHeight-12;cardbar.style.top=(top>=58?top:r.top+state.view.y+maxy*state.view.zoom+12)+'px';markSwatch();}
@@ -333,10 +333,10 @@
   function openPanel(c,focusTitle){openCardId=c.id;selectCard(c.id,false);
     $('pHeadDot').style.background=COLORS[c.color].bg;$('pHeadDot').style.borderColor=COLORS[c.color].border;
     pTitle.value=c.title||'';autoGrow(pTitle);renderBlocks(c);renderTags(c);renderInfo(c);renderConn(c);renderPanelSwatches(c);renderShapePicker(c);
-    panel.classList.add('open');
+    panel.classList.add('open');hideCardbar();
     if(focusTitle)setTimeout(()=>pTitle.focus(),60);}
   function closePanel(){closeMenu();panel.classList.remove('open');openCardId=null;}
-  $('pClose').addEventListener('click',closePanel);
+  $('pClose').addEventListener('click',()=>{closePanel();showCardbar();});
 
   pTitle.addEventListener('input',()=>{const c=curCard();if(!c)return;c.title=pTitle.value;autoGrow(pTitle);renderTile(c);refreshLinksFor(c.id);touch(c);scheduleSave('title:'+c.id);});
   pTitle.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();const el=$('pBlocks').querySelector('.blk .ed');if(el)placeCaretEnd(el);}});
@@ -467,21 +467,31 @@
   function renderInfo(c){$('iCreated').textContent=relTime(c.createdAt);$('iUpdated').textContent=relTime(c.updatedAt);
     const ct=countText(c.title,c.blocks);$('iCount').textContent=ct.words+' 字詞 · '+ct.chars+' 字元';}
   (function(){const sec=$('infoSec');let open=false;try{open=localStorage.getItem('sju-ui-info')==='1';}catch(e){}
-    sec.classList.toggle('collapsed',!open);
-    $('infoToggle').addEventListener('click',()=>{const willOpen=sec.classList.contains('collapsed');sec.classList.toggle('collapsed',!willOpen);try{localStorage.setItem('sju-ui-info',willOpen?'1':'0');}catch(e){}});})();
+    sec.classList.toggle('collapsed',!open);$('infoToggle').setAttribute('role','button');$('infoToggle').tabIndex=0;$('infoToggle').setAttribute('aria-expanded',String(open));
+    $('infoToggle').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();e.currentTarget.click();}});
+    $('infoToggle').addEventListener('click',()=>{const willOpen=sec.classList.contains('collapsed');sec.classList.toggle('collapsed',!willOpen);$('infoToggle').setAttribute('aria-expanded',String(willOpen));try{localStorage.setItem('sju-ui-info',willOpen?'1':'0');}catch(e){}});})();
   function connectedCards(id){const ids=new Set();state.links.forEach(l=>{if(l.from===id)ids.add(l.to);if(l.to===id)ids.add(l.from);});return [...ids].map(i=>byId(state.cards,i)).filter(Boolean);}
   function renderConn(c){const box=$('pConn');box.innerHTML='';const list=connectedCards(c.id);
-    if(!list.length){box.innerHTML='<div class="pempty">還沒有關聯。選取卡片後，從右側圓點拖到另一張卡片即可建立連結。</div>';return;}
+    if(!list.length){box.textContent='尚無關聯';box.classList.add('pempty');return;}box.classList.remove('pempty');
     list.forEach(o=>{const lbl=cardLabel(o);const row=document.createElement('div');row.className='crow';
       row.innerHTML='<span class="cdotc" style="background:'+COLORS[o.color].bg+'"></span><span class="cname'+(lbl.faint?' faint':'')+'">'+escapeHtml(lbl.text)+'</span>';
       row.addEventListener('click',()=>{openPanel(o);focusCardOnScreen(o);});box.appendChild(row);});}
   function focusCardOnScreen(c){const r=canvas.getBoundingClientRect();const cc=cardCenter(c);state.view.x=r.width/2-392/2-cc.x*state.view.zoom;state.view.y=r.height/2-cc.y*state.view.zoom;applyView();}
-  function renderPanelSwatches(c){const box=$('pSwatches');box.innerHTML='';    COLOR_KEYS.forEach(k=>{const s=document.createElement('div');s.className='pswatch';s.dataset.color=k;s.style.background=COLORS[k].bg;s.style.borderColor=COLORS[k].border;
+  function renderPanelSwatches(c){const box=$('pSwatches');box.innerHTML='';    COLOR_KEYS.forEach(k=>{const s=document.createElement('button');s.type='button';s.className='pswatch';s.title={paper:'白色',amber:'米黃',sage:'淺綠',blue:'淺藍',rose:'粉紅',lavender:'淺紫',grey:'灰色'}[k];s.setAttribute('aria-label',s.title);s.dataset.color=k;s.style.background=COLORS[k].bg;s.style.borderColor=COLORS[k].border;
       s.addEventListener('click',()=>{c.color=k;applyCardColor(c);$('pHeadDot').style.background=COLORS[k].bg;$('pHeadDot').style.borderColor=COLORS[k].border;markPanelSwatch();markSwatch();touch(c);scheduleSave();});box.appendChild(s);});markPanelSwatch();}
-  function markPanelSwatch(){const c=curCard();if(!c)return;$('pSwatches').querySelectorAll('.pswatch').forEach(s=>s.classList.toggle('on',s.dataset.color===c.color));}
+  function markPanelSwatch(){const c=curCard();if(!c)return;$('pSwatches').querySelectorAll('.pswatch').forEach(s=>(s.classList.toggle('on',s.dataset.color===c.color),s.setAttribute('aria-pressed',String(s.dataset.color===c.color))));}
   const SHAPES=[{s:'note',label:'圓角'},{s:'rect',label:'直角'},{s:'pill',label:'膠囊'}];
-  function renderShapePicker(c){const box=$('pShapes');box.innerHTML='';SHAPES.forEach(sp=>{const b=document.createElement('button');b.className='pshape'+(c.shape===sp.s?' on':'');b.textContent=sp.label;
+  function renderShapePicker(c){const box=$('pShapes');box.innerHTML='';SHAPES.forEach(sp=>{const b=document.createElement('button');b.className='pshape'+(c.shape===sp.s?' on':'');b.textContent=sp.label;b.setAttribute('aria-pressed',String(c.shape===sp.s));
     b.addEventListener('click',()=>{c.shape=sp.s;applyCardShape(c);renderShapePicker(c);touch(c);scheduleSave();});box.appendChild(b);});}
+  $('pDuplicate').addEventListener('click',()=>{const c=curCard();if(c){selection=new Set([c.id]);duplicateSelection();}});
+  $('pAddLink').addEventListener('click',event=>{
+    const c=curCard();if(!c)return;const linked=new Set(connectedCards(c.id).map(card=>card.id));
+    const candidates=state.cards.filter(card=>card.id!==c.id&&!linked.has(card.id)),r=event.currentTarget.getBoundingClientRect();
+    if(!candidates.length){showBanner('目前沒有其他可關聯的卡片');return;}
+    showMenu(candidates.map(card=>({label:cardLabel(card).text,onClick:()=>{
+      const link={id:uid(),from:c.id,to:card.id,dir:'none',label:''};state.links.push(link);makeLinkEl(link);refreshLinks();renderConn(c);touch(c);scheduleSave();
+    }})),r.left,r.bottom+4,'連到哪張卡片？');
+  });
   $('pDelete').addEventListener('click',()=>{const c=curCard();if(!c)return;selection=new Set([c.id]);deleteSelection();});
 
   // ---------- pointer: card drag ----------
