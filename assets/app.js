@@ -135,9 +135,9 @@
 
   // ---------- start screen / local board library ----------
   const home=$('home'),workspaceQueue=Core.serial();
-  let workspaceMeta={kind:'local',name:'本機白板'},homeDriveRequest=0;
+  let workspaceMeta={kind:'local',name:'本機白板'},homeDriveRequest=0,homeRoute='drive';
   function currentWorkspace(){
-    if(gdCurrentFileId)return {kind:'drive',name:gdCurrentFileName.replace(/\.json$/,''),id:gdCurrentFileId,boardId:state.boardId};
+    if(gdCurrentFileId)return {kind:'drive',name:gdCurrentFileName.replace(/\.json$/,''),id:gdCurrentFileId,ownerId:gdUser?.permissionId||workspaceMeta.ownerId,pending:gdDirty,boardId:state.boardId};
     if(syncHandle)return {kind:'file',name:syncHandle.name,boardId:state.boardId};
     return {...workspaceMeta,boardId:state.boardId};
   }
@@ -148,18 +148,31 @@
     if(!snapshot.savedAt&&!snapshot.cards.length&&!snapshot.images.length&&!snapshot.groups.length)return Promise.resolve();
     return workspaceQueue(()=>Core.storeLocalBoard(record));
   }
-  function closeHome(){home.hidden=true;$('app').inert=false;$('btnHome').focus();}
+  function canEditWorkspace(){return !loadFailed&&(gdCurrentFileId?gdReady()&&workspaceMeta.ownerId===gdUser?.permissionId:workspaceMeta.kind==='local'||!!syncHandle);}
+  function closeHome(){if(!canEditWorkspace())return;home.hidden=true;$('app').inert=false;$('btnHome').focus();}
   function openHome(){
     if(transitioning||inboxBusy)return;if(saveTimer)save();closeMenu();setMobileMore(false);$('mobileFinder').hidden=true;
     home.hidden=false;$('app').inert=true;renderHome();$('homeContinue').focus();
   }
+  function setHomeRoute(route){homeRoute=route;renderHome();}
+  $('homeRouteDrive').addEventListener('click',()=>setHomeRoute('drive'));
+  $('homeRouteLocal').addEventListener('click',()=>setHomeRoute('local'));
   function renderHome(){
-    const meta=currentWorkspace(),source=meta.kind==='drive'?(gdReady()?'Google Drive':'Google Drive（需重新登入）'):meta.kind==='file'?'本機同步檔':meta.kind==='cache'?'本機副本（重新登入並選取後才會同步）':'這個瀏覽器';
-    $('homeCurrentName').textContent=meta.name||'本機白板';$('homeEyebrow').textContent=state.cards.length||state.savedAt?'繼續上次編輯':'開始使用';
-    $('homeCurrentMeta').textContent=`${source} · ${state.cards.length} 張卡片 · ${workspaceTime(state.savedAt)}`;
-    $('homeContinue').textContent=meta.kind==='cache'?'繼續編輯本機副本':state.cards.length||state.savedAt?'繼續編輯':'先在本機開始';$('homeContinue').disabled=loadFailed;
-    $('homeRaw').hidden=!loadFailed;$('homeExport').disabled=loadFailed;
-    $('homeStatus').textContent=loadFailed?'目前本機資料無法讀取，請先下載原始備份修復；原資料不會被覆蓋。':gdDirty?'目前白板尚有未同步的編輯；切換時會先嘗試保存。':'';
+    const meta=currentWorkspace(),cloud=homeRoute==='drive',bound=!!gdCurrentFileId;
+    home.dataset.route=homeRoute;home.classList.toggle('home-needs-login',cloud&&!gdReady());
+    $('homeRouteDrive').setAttribute('aria-pressed',String(cloud));$('homeRouteLocal').setAttribute('aria-pressed',String(!cloud));
+    $('homeRouteHint').textContent=cloud?'登入自己的 Google 帳號，開啟雲端保存的白板，換裝置也能接續編輯。':'本機白板與 Google Drive 分開保存，不會因為登入就自動同步。共用此瀏覽器的人也能存取本機資料。';
+    const showCurrent=cloud?bound&&gdReady():meta.kind==='local'||meta.kind==='file';
+    $('homeCurrentName').textContent=showCurrent?(meta.name||'本機白板'):cloud?'開啟你的 Google Drive 白板':'建立或選擇本機白板';
+    $('homeEyebrow').textContent=showCurrent?'繼續上次編輯':cloud?'雲端模式':'本機模式';
+    $('homeCurrentMeta').textContent=showCurrent?`${cloud?'Google Drive':meta.kind==='file'?'本機同步檔':'這個瀏覽器'} · ${state.cards.length} 張卡片 · ${workspaceTime(state.savedAt)}`:cloud?'以 Drive 內容為正式版本；登入後選取白板才會進入編輯。':'內容只存在這個瀏覽器，請定期匯出備份。';
+    $('homeContinue').textContent=cloud?(bound&&gdReady()?'繼續編輯雲端白板':gdReady()?'選擇我的 Drive 白板':'登入 Google，開啟白板'):showCurrent?'繼續編輯本機白板':'建立本機白板';
+    $('homeContinue').disabled=loadFailed;
+    $('homeExport').hidden=!showCurrent;$('homeExport').disabled=loadFailed;$('homeRaw').hidden=!loadFailed;
+    $('homeDestination').value=cloud?'drive':'local';$('homeCreateForm').querySelector('[type="submit"]').disabled=cloud&&!gdReady();
+    $('homeCreateHint').textContent=cloud?'建立在目前登入帳號的 Google Drive。':'建立獨立本機白板，只保存在此瀏覽器。';
+    $('homeRecovery').hidden=cloud||meta.kind!=='cache'||!!meta.ownerId&&meta.ownerId!==gdUser?.permissionId;
+    $('homeStatus').textContent=loadFailed?'目前本機資料無法讀取，請先下載原始備份修復。':gdDirty?'目前白板尚有未同步的編輯；切換時會先嘗試保存。':'';
     updateConnectionStatus();renderHomeLocal();renderHomeDrive();
   }
   async function renderHomeLocal(){
@@ -182,7 +195,8 @@
     const request=++homeDriveRequest,ready=gdReady(),list=$('homeDriveList');
     $('homeDriveLogin').hidden=ready;list.hidden=!ready;$('homeDriveRefresh').hidden=!ready;$('homeLogout').hidden=!ready;
     $('homeDriveOption').disabled=!ready;$('homeDriveOption').textContent=ready?'Google Drive':'Google Drive（請先登入）';
-    if(!ready){$('homeDestination').value='local';return;}
+    $('homeAccount').textContent=ready?'目前帳號：'+(gdUser.emailAddress||gdUser.displayName):'尚未登入 Google';$('homeSwitchAccount').hidden=!ready;
+    if(!ready)return;
     list.className='home-board-list';list.textContent='載入白板中…';
     try{const boards=await gdListBoards();if(request!==homeDriveRequest||!gdReady())return;list.replaceChildren();
       if(!boards.length){list.textContent='還沒有 Drive 白板，可從「建立新白板」開始。';return;}
@@ -190,19 +204,24 @@
         const title=document.createElement('strong');title.textContent=board.name.replace(/\.json$/,'');const detail=document.createElement('span');detail.textContent='Google Drive · '+workspaceTime(Date.parse(board.modifiedTime));button.append(title,detail);
         button.addEventListener('click',async()=>{try{if(await gdLoadBoard(board.id,board.name))closeHome();}catch(e){reportError(e);}});list.append(button);
       }
-    }catch(e){if(request!==homeDriveRequest)return;list.textContent='白板載入失敗，可按「重新整理」重試，或繼續編輯本機副本。';reportError(e);}
+    }catch(e){if(request!==homeDriveRequest)return;list.textContent='白板載入失敗，可按「重新整理」重試，本機備份仍保留，可稍後重新登入。';reportError(e);}
   }
-  $('btnHome').addEventListener('click',openHome);
-  $('homeContinue').addEventListener('click',()=>{if(loadFailed)return;if(!state.savedAt)save();updateDriveBtn();closeHome();});
+  $('btnHome').addEventListener('click',()=>{homeRoute=gdCurrentFileId?'drive':workspaceMeta.kind==='local'?'local':'drive';openHome();});
+  $('homeContinue').addEventListener('click',()=>{
+    if(loadFailed)return;
+    if(homeRoute==='drive'){if(!gdReady()){gdLogin();return;}if(gdCurrentFileId&&canEditWorkspace())closeHome();else $('homeDriveList').scrollIntoView({block:'nearest'});return;}
+    if(gdCurrentFileId||workspaceMeta.kind!=='local'&&!syncHandle){$('homeNewName').focus();return;}
+    if(!state.savedAt)save();updateDriveBtn();closeHome();
+  });
   $('homeLogin').addEventListener('click',gdLogin);
   $('homeDriveRefresh').addEventListener('click',renderHomeDrive);
   $('homeLogout').addEventListener('click',async()=>{await gdLogout();renderHome();});
-  $('homeImport').addEventListener('click',()=>fileInput.click());
+  $('homeImport').addEventListener('click',()=>{if(homeRoute==='local')fileInput.click();});
   $('homeExport').addEventListener('click',()=>downloadJSON('whiteboard-'+Date.now()+'.json',state));
   $('homeRaw').addEventListener('click',()=>$('btnRawBackup').click());
   $('homeCreateForm').addEventListener('submit',async event=>{
     event.preventDefault();const name=$('homeNewName').value.trim();if(!name){$('homeNewName').focus();return;}
-    if($('homeDestination').value==='drive'){
+    if(homeRoute==='drive'){
       if(!gdReady()){reportError(new Error('請先登入 Google Drive'));return;}
       let file;const ok=await transition(async()=>{file=await gdCreateBoard(name);});
       if(ok){try{if(await gdLoadBoard(file.id,name+'.json')){$('homeNewName').value='';closeHome();}}catch(e){reportError(e);}}return;
@@ -212,8 +231,29 @@
       const next=normalize({cards:[]});await detachSources();state=next;workspaceMeta={kind:'local',name};editVersion++;resetScene();save();await archiveLocalWorkspace();updateDriveBtn();
     });if(ok){$('homeNewName').value='';closeHome();}
   });
+  async function keepAsLocal(snapshot,meta){
+    const copy=normalize(structuredClone(snapshot));copy.boardId=uid();copy.savedAt=now();
+    await Core.storeLocalBoard({meta:{kind:'local',name:(meta.name||'白板')+'（復原副本）',boardId:copy.boardId},state:copy});return copy;
+  }
+  $('homeRecoveryExport').addEventListener('click',()=>downloadJSON('drive-recovery-'+Date.now()+'.json',state));
+  $('homeRecoveryLocal').addEventListener('click',async()=>{
+    if(workspaceMeta.kind!=='cache')return;
+    const ok=await transition(async()=>{const meta={...workspaceMeta},copy=await keepAsLocal(state,meta);await detachSources();state=copy;workspaceMeta={kind:'local',name:(meta.name||'白板')+'（復原副本）'};editVersion++;resetScene();});
+    if(ok){homeRoute='local';renderHome();}
+  });
+  async function compareRecovery(remote,remoteName){
+    const dialog=$('recoveryDialog'),snapshot=structuredClone(state),meta={...workspaceMeta};
+    const summary=data=>`${data.cards.length} 張卡片 · ${workspaceTime(data.savedAt)}\n`+data.cards.slice(0,12).map(c=>c.title||'未命名卡片').join('\n');
+    $('recoveryLocalSummary').textContent=(meta.name||'原白板')+'\n'+summary(snapshot);$('recoveryRemoteSummary').textContent=remoteName+'\n'+summary(remote);
+    $('recoveryDownload').onclick=()=>downloadJSON('drive-recovery-'+Date.now()+'.json',snapshot);
+    const choice=await new Promise(resolve=>{dialog.addEventListener('close',()=>resolve(dialog.returnValue),{once:true});dialog.returnValue='cancel';dialog.showModal();});
+    if(choice==='cancel')return false;
+    await Core.backup({local:snapshot,remote,meta},'確認雲端備份差異');
+    if(choice==='local')await keepAsLocal(snapshot,meta);
+    return true;
+  }
   home.addEventListener('keydown',event=>{
-    if(event.key==='Escape'&&!loadFailed&&!transitioning){event.preventDefault();closeHome();return;}
+    if(event.key==='Escape'&&canEditWorkspace()&&!transitioning&&((homeRoute==='drive'&&gdCurrentFileId)||(homeRoute==='local'&&!gdCurrentFileId))){event.preventDefault();closeHome();return;}
     if(event.key!=='Tab')return;
     const focusable=[...home.querySelectorAll('button,input,select,a')].filter(el=>!el.disabled&&el.getClientRects().length),first=focusable[0],last=focusable.at(-1);
     if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}
@@ -288,7 +328,7 @@
     clearTimeout(gdWriteTimer);clearTimeout(fileWriteTimer);
     if(gdDirty&&gdCurrentFileId){if(!gdReady())throw new Error('尚有未同步內容，請先重新登入 Drive 或匯出備份');if(!await gdWriteFile())throw new Error('雲端尚未保存，已取消切換');}
     if(fileDirty&&syncHandle&&!await writeSyncFile())throw new Error('同步檔尚未保存，已取消切換');
-    await archiveLocalWorkspace();await Core.backup(state,'切換前白板');
+    await archiveLocalWorkspace();if(workspaceMeta.kind==='cache')await stashAccountRecovery();await Core.backup(state,'切換前白板');
   }
   async function transition(action){
     if(transitioning||inboxBusy)return false;transitioning=true;document.body.inert=true;
@@ -1041,24 +1081,58 @@
   const fileURL=id=>`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}`;
   const uploadURL=id=>`https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(id)}?uploadType=media`;
   const scheduleGdWrite=()=>{clearTimeout(gdWriteTimer);gdWriteTimer=setTimeout(()=>{if(!gdConflict)gdWriteFile();},1200);};
-  function gdReady(){return !!(gdToken&&gdToken.access_token);}
+  function gdReady(){return !!(gdToken?.access_token&&gdUser?.permissionId);}
   function gdInboxName(name){return name.replace(/\.json$/,'')+'-inbox.json';}
   async function gdFetch(url,opts={}){
     try{return await Core.request(url,opts,gdToken?.access_token);}
-    catch(e){if(e.status===401){gdToken=null;clearTimeout(gdRefreshTimer);updateDriveBtn();updateSaveStatus();if(!home.hidden)renderHomeDrive();}throw e;}
+    catch(e){if(e.status===401){gdAuthLost();}throw e;}
+  }
+  let gdLoginBusy=false;
+  function gdAuthLost(){
+    if(saveTimer)save();gdToken=null;clearTimeout(gdRefreshTimer);clearTimeout(gdWriteTimer);
+    updateDriveBtn();updateSaveStatus();
+    if(gdCurrentFileId){homeRoute='drive';closeMenu();setMobileMore(false);closePanel();home.hidden=false;$('app').inert=true;renderHome();$('homeContinue').focus();}
+    else if(!home.hidden)renderHome();
+  }
+  async function stashAccountRecovery(){
+    const meta=currentWorkspace();if(!meta.ownerId||!meta.id)return;
+    await Core.set('drive-recovery:'+meta.ownerId,{meta:{...meta,kind:'cache'},state:structuredClone(state)});
+    await Core.backup({meta,state},'切換 Google 帳號前');
   }
   function gdLogin(){
+    if(gdLoginBusy)return;
     if(!window.google?.accounts?.oauth2){showBanner('Google 登入服務載入中，請稍後再試。');return;}
-    const client=google.accounts.oauth2.initTokenClient({client_id:GD_CLIENT_ID,scope:GD_SCOPE,
-      callback:resp=>{
-        if(resp.error||!resp.access_token){reportError(new Error('Google 登入失敗，請重試'));return;}
-        gdToken=resp;gdUser={};gdFolderId=null;clearTimeout(gdRefreshTimer);
-        gdRefreshTimer=setTimeout(()=>{gdToken=null;updateDriveBtn();updateSaveStatus();showBanner('Drive 授權已到期，請重新登入；內容仍保留在本機。');if(!home.hidden)renderHomeDrive();},Math.max(1000,(Number(resp.expires_in)||3600)*1000));
-        updateDriveBtn();updateSaveStatus();if(home.hidden)openDriveModal();else renderHomeDrive();
-      },error_callback:()=>showBanner('Google 授權未完成，請按 Drive 重試')});
-    client.requestAccessToken();
+    if(saveTimer)save();gdLoginBusy=true;
+    const client=google.accounts.oauth2.initTokenClient({client_id:GD_CLIENT_ID,scope:GD_SCOPE,prompt:'select_account',
+      callback:async resp=>{
+        try{
+          if(resp.error||!resp.access_token)throw new Error('Google 登入失敗，請重試');
+          // Identity must be known before restoring any Drive binding or starting writes.
+          const data=await(await Core.request('https://www.googleapis.com/drive/v3/about?fields=user(permissionId,emailAddress,displayName)',{},resp.access_token)).json();
+          if(!data.user?.permissionId)throw new Error('無法確認 Google 帳號，已停止連線');
+          const previous=currentWorkspace();
+          if(previous.ownerId&&previous.ownerId!==data.user.permissionId){
+            await stashAccountRecovery();clearDriveBinding();state=normalize({cards:[]});workspaceMeta={kind:'local',name:'本機白板'};resetScene();
+          }
+          gdToken=resp;gdUser=data.user;gdFolderId=null;clearTimeout(gdRefreshTimer);
+          if(!gdCurrentFileId&&workspaceMeta.kind!=='cache'){
+            const record=await Core.get('drive-recovery:'+gdUser.permissionId);
+            if(record?.meta?.ownerId===gdUser.permissionId&&record.state){await archiveLocalWorkspace();state=normalize(record.state);workspaceMeta={...record.meta,kind:'cache'};resetScene();}
+          }
+          gdRefreshTimer=setTimeout(()=>{gdAuthLost();showBanner('Google 授權已到期，雲端白板已暫停編輯。請重新登入。');},Math.max(1000,(Number(resp.expires_in)||3600)*1000));
+          homeRoute='drive';updateDriveBtn();updateSaveStatus();if(home.hidden){if(canEditWorkspace())openDriveModal();else openHome();}else renderHome();
+        }catch(e){gdToken=null;gdUser=null;updateDriveBtn();updateSaveStatus();reportError(e);}finally{gdLoginBusy=false;}
+      },error_callback:()=>{gdLoginBusy=false;showBanner('Google 授權未完成，請重新登入');}});
+    client.requestAccessToken({prompt:'select_account'});
   }
-  async function gdLogout(){await transition(async()=>{clearTimeout(gdRefreshTimer);gdToken=null;gdUser=null;gdFolderId=null;clearDriveBinding();workspaceMeta={...workspaceMeta,kind:workspaceMeta.kind==='local'?'local':'cache'};persistLocalOnly();updateDriveBtn();closeDriveModal();});}
+  async function gdLogout(){
+    const ok=await transition(async()=>{
+      await stashAccountRecovery();clearTimeout(gdRefreshTimer);gdToken=null;gdUser=null;gdFolderId=null;clearDriveBinding();
+      if(workspaceMeta.kind!=='local'){state=normalize({cards:[]});workspaceMeta={kind:'local',name:'本機白板'};resetScene();}
+      updateDriveBtn();closeDriveModal();
+    });if(ok){homeRoute='drive';openHome();}
+  }
+  $('homeSwitchAccount').addEventListener('click',async()=>{await gdLogout();if(!gdReady())gdLogin();});
   function clearDriveBinding(){resetHistory();clearTimeout(gdWriteTimer);gdCurrentFileId=null;gdCurrentFileName=null;gdInboxFileId=null;gdBaseline=null;gdDirty=false;gdConflict=false;gdError='';gdLastSavedAt=null;inboxCards=[];updateInboxBadge();updateSaveStatus();}
   async function detachSources(){await unlinkSync();clearDriveBinding();updateDriveBtn();updateInboxLink();}
   async function gdList(q,fields='id,name'){
@@ -1068,19 +1142,21 @@
     }while(pageToken);return files;
   }
   async function gdEnsureFolder(){
-    if(gdFolderId)return gdFolderId;
+    if(gdFolderId)return gdFolderId;const owner=gdUser?.permissionId;
     const folders=await gdList(`name='${Core.queryValue(GD_FOLDER)}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+    if(!gdReady()||gdUser.permissionId!==owner)throw new Error('Google 帳號已變更');
     if(folders.length>1)throw new Error('Drive 有多個「聚思白板」資料夾，請先整理後重試');
     if(folders.length){gdFolderId=folders[0].id;return gdFolderId;}
     const data=await(await gdFetch('https://www.googleapis.com/drive/v3/files',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:GD_FOLDER,mimeType:'application/vnd.google-apps.folder'})})).json();
+    if(!gdReady()||gdUser.permissionId!==owner)throw new Error('Google 帳號已變更');
     if(!data.id)throw new Error('Drive 資料夾建立失敗');gdFolderId=data.id;return data.id;
   }
   async function gdListBoards(){const folder=await gdEnsureFolder();return(await gdList(`'${Core.queryValue(folder)}' in parents and mimeType='application/json' and trashed=false`,'id,name,modifiedTime,appProperties')).filter(f=>!f.name.endsWith('-inbox.json')&&f.appProperties?.juiceType!=='inbox');}
   async function gdReadFile(fileId){return(await gdFetch(fileURL(fileId)+'?alt=media')).text();}
   async function gdWriteFile(){
     return driveQueue(async()=>{
-      if(!gdCurrentFileId)return false;if(!gdDirty)return true;
-      const fileId=gdCurrentFileId,version=editVersion,body=JSON.stringify(state);
+      if(!gdCurrentFileId)return false;if(!gdReady()||workspaceMeta.ownerId!==gdUser.permissionId){gdError='請使用原本的 Google 帳號重新登入';updateSaveStatus();return false;}if(!gdDirty)return true;
+      const fileId=gdCurrentFileId,owner=gdUser.permissionId,token=gdToken.access_token,version=editVersion,body=JSON.stringify(state);
       gdSaving=true;gdError='';updateSaveStatus();
       try{
         if(gdConflict)throw new Error('同步衝突尚未處理。請先匯出目前白板，再重新開啟遠端白板');
@@ -1088,9 +1164,10 @@
         // Always preserve both candidates before any overwrite, including legacy files.
         await Core.backup({local:Core.parse(body),remote:Core.parse(remote),fileId},'Drive 寫入前');
         if(gdBaseline===null||remote!==gdBaseline){gdConflict=true;throw new Error('其他裝置已修改此白板，已停止覆寫。請匯出目前內容後，重新開啟遠端白板');}
+        if(!gdReady()||gdUser.permissionId!==owner||gdToken.access_token!==token||gdCurrentFileId!==fileId)throw new Error('Google 連線已變更，已停止寫入');
         await gdFetch(uploadURL(fileId),{method:'PATCH',headers:{'Content-Type':'application/json',...(etag?{'If-Match':etag}:{})},body});
         gdBaseline=body;gdLastSavedAt=now();if(editVersion===version)gdDirty=false;
-        if(gdDirty)scheduleGdWrite();return true;
+        persistLocalOnly();if(gdDirty)scheduleGdWrite();return true;
       }catch(e){if(e.status===412)gdConflict=true;gdError=e.message;reportError(e);return false;}
       finally{gdSaving=false;updateSaveStatus();}
     });
@@ -1102,7 +1179,8 @@
     if(files.length>1)throw new Error('找到多份同名收件匣，請先整理後重試');return files[0]?.id||null;
   }
   async function gdCreateJSON(name,value,properties={}){
-    const folder=await gdEnsureFolder(),form=new FormData();
+    const owner=gdUser?.permissionId,folder=await gdEnsureFolder(),form=new FormData();
+    if(!gdReady()||gdUser.permissionId!==owner)throw new Error('Google 帳號已變更');
     form.append('metadata',new Blob([JSON.stringify({name,parents:[folder],mimeType:'application/json',appProperties:properties})],{type:'application/json'}));
     form.append('media',new Blob([JSON.stringify(value)],{type:'application/json'}));
     const data=await(await gdFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',{method:'POST',body:form})).json();
@@ -1133,11 +1211,17 @@
       gdDirty=false;gdConflict=false;
     }
     return transition(async()=>{
+      const owner=gdUser?.permissionId;if(!gdReady())throw new Error('請先登入 Google');
       const raw=await gdReadFile(fileId),next=normalize(Core.parse(raw));
+      if(workspaceMeta.kind==='cache'&&workspaceMeta.pending!==false&&(!workspaceMeta.ownerId||workspaceMeta.ownerId===owner)){
+        if(!await compareRecovery(next,fileName.replace(/\.json$/,'')))throw new Error('已取消開啟，備份仍保留');
+      }
+      if(!gdReady()||gdUser.permissionId!==owner)throw new Error('Google 帳號已變更，請重新選取白板');
       let inboxId=await gdFindInboxFile(fileName,fileId);if(!inboxId)inboxId=await gdCreateInboxFile(fileName,fileId);
       const cards=Core.inbox(await gdReadFile(inboxId));
+      if(!gdReady()||gdUser.permissionId!==owner)throw new Error('Google 帳號已變更，已停止開啟');
       await unlinkSync(); // A Drive board must never inherit a local file destination.
-      state=next;workspaceMeta={kind:'drive',name:fileName.replace(/\.json$/,''),id:fileId};gdCurrentFileId=fileId;gdCurrentFileName=fileName;gdInboxFileId=inboxId;gdBaseline=raw;
+      state=next;workspaceMeta={kind:'drive',name:fileName.replace(/\.json$/,''),id:fileId,ownerId:owner,pending:false};gdCurrentFileId=fileId;gdCurrentFileName=fileName;gdInboxFileId=inboxId;gdBaseline=raw;
       gdDirty=false;gdConflict=false;gdError='';gdLastSavedAt=null;editVersion++;inboxCards=cards;
       resetScene();updateDriveBtn();updateInboxLink();updateInboxBadge();updateSaveStatus();showBanner('已載入白板「'+fileName.replace(/\.json$/,'')+'」');
     });
@@ -1149,7 +1233,7 @@
       :syncHandle?'此白板使用同步檔':workspaceMeta.kind==='cache'?'此白板是本機副本，未同步 Drive':'此白板僅存本機';
     const text=connection+' · '+storage;
     const action=!ready?(bound||workspaceMeta.kind==='cache'?'重新登入 Google':'登入 Google'):!bound?'選擇 Drive 白板':gdConflict?'查看 Drive 白板':gdError||gdDirty?'立即同步':'管理 Drive';
-    $('connectionText').textContent=text;$('homeConnectionText').textContent=text;
+    $('connectionText').textContent=text;$('homeConnectionText').textContent=homeRoute==='drive'&&!bound?connection+' · 尚未開啟雲端白板':text;
     $('connectionAction').textContent=action;$('homeConnectionAction').textContent=action;
     const detail=bound?'此白板已連結 Google Drive；授權有效時會自動同步。':'登入後還需要選取 Drive 白板，才會啟用這張雲端白板的同步。繼續編輯本機副本只會儲存在此瀏覽器。';
     $('connectionStatus').title=detail;$('homeConnectionText').title=detail;
@@ -1171,7 +1255,7 @@
   }
   async function renderDriveModal(){
     $('drvLogin').style.display=gdReady()?'none':'';$('drvLoggedIn').style.display=gdReady()?'':'none';if(!gdReady())return;
-    $('drvUserRow').textContent='已授權 Google Drive';const list=$('drvBoardList');list.textContent='載入中…';
+    $('drvUserRow').textContent='目前帳號：'+(gdUser.emailAddress||gdUser.displayName);const list=$('drvBoardList');list.textContent='載入中…';
     try{const boards=await gdListBoards();list.replaceChildren();if(!boards.length)list.textContent='尚無白板，請新增白板。';
       for(const b of boards){const row=document.createElement('div');row.className='drv-board'+(gdCurrentFileId===b.id?' active':'');
         const label=document.createElement('div');label.className='drv-board-name';label.textContent=b.name.replace(/\.json$/,'');
@@ -1184,7 +1268,7 @@
     }catch(e){list.textContent='載入失敗，請關閉後重試。';reportError(e);}
   }
   function openDriveModal(){$('driveModal').classList.add('open');renderDriveModal();}
-  function closeDriveModal(){$('driveModal').classList.remove('open');}
+  function closeDriveModal(){$('driveModal').classList.remove('open');if(home.hidden&&!canEditWorkspace()){homeRoute='drive';openHome();}}
   $('drvClose').addEventListener('click',closeDriveModal);
   $('driveModal').addEventListener('pointerdown',e=>{if(e.target.id==='driveModal')closeDriveModal();});
   $('drvLoginBtn').addEventListener('click',gdLogin);$('drvLogout').addEventListener('click',gdLogout);

@@ -1,11 +1,12 @@
 const {test,expect}=require('@playwright/test');
 const empty=(title='')=>({cards:title?[{id:'card1',title,blocks:[{id:'block1',type:'text',html:'Hello'}],tags:[]}]:[],links:[],groups:[],images:[],view:{x:0,y:0,zoom:1},savedAt:123});
 async function mockDrive(page,{writeStatus=200,bad=false,name='Board A.json'}={}){
-  const api={files:{a:JSON.stringify(empty('Remote A')),b:bad?'not json':JSON.stringify(empty('Remote B')),ia:JSON.stringify({version:1,inbox:[]}),ib:JSON.stringify({version:1,inbox:[]})},writes:[],reads:[],writeStatus,listPage:0,created:[]};
+  const api={files:{a:JSON.stringify(empty('Remote A')),b:bad?'not json':JSON.stringify(empty('Remote B')),ia:JSON.stringify({version:1,inbox:[]}),ib:JSON.stringify({version:1,inbox:[]})},writes:[],reads:[],writeStatus,listPage:0,created:[],user:{permissionId:'user-a',emailAddress:'alice@example.test',displayName:'Alice'}};
   await page.route('https://accounts.google.com/gsi/client',r=>r.fulfill({contentType:'application/javascript',body:`window.google={accounts:{oauth2:{initTokenClient:opts=>({requestAccessToken:()=>opts.callback({access_token:'mock-token',expires_in:3600})})}}};`}));
   await page.route('https://www.googleapis.com/**',async route=>{
     const req=route.request(),url=new URL(req.url()),method=req.method();
     const reply=(body,status=200,extra={})=>route.fulfill({status,contentType:typeof body==='string'?'application/json':'application/json',headers:{etag:'"mock"',...extra},body:typeof body==='string'?body:JSON.stringify(body)});
+    if(url.pathname.endsWith('/about'))return reply({user:api.user});
     const id=url.pathname.match(/\/files\/([^/]+)$/)?.[1];
     if(id&&method==='GET'){api.reads.push(id);return reply(api.files[id]??'{}');}
     if(id&&method==='PATCH'){
@@ -27,14 +28,14 @@ async function mockDrive(page,{writeStatus=200,bad=false,name='Board A.json'}={}
   return api;
 }
 test.afterEach(async({page})=>{expect(page.appErrors||[]).toEqual([]);});
-async function boot(page,{showHome=false}={}){const errors=[];page.appErrors=errors;page.on('pageerror',e=>{errors.push(e.message);console.log('PAGE ERROR:',e.stack);});await page.goto('/');await expect(page.locator('#home')).toBeVisible();if(!showHome&&await page.locator('#homeContinue').isEnabled())await page.locator('#homeContinue').click();await expect(page.locator('#btnAdd')).toBeVisible();return errors;}
+async function boot(page,{showHome=false}={}){const errors=[];page.appErrors=errors;page.on('pageerror',e=>{errors.push(e.message);console.log('PAGE ERROR:',e.stack);});await page.goto('/');await expect(page.locator('#home')).toBeVisible();if(!showHome){await page.locator('#homeRouteLocal').click();if(await page.locator('#homeContinue').isEnabled())await page.locator('#homeContinue').click();await expect(page.locator('#btnAdd')).toBeVisible();}return errors;}
 async function openBoard(page,name='Board A'){await page.locator('#btnDrive').click();await expect(page.locator('.drv-board-name').first()).toBeVisible();await page.locator('.drv-board-name').filter({hasText:name}).click();await expect(page.locator('#boardName')).toHaveText('· '+name);}
 async function editTitle(page,title){await page.locator('.card').first().dblclick();await page.locator('#pTitle').fill(title);await page.locator('#pClose').click();}
 async function stored(page){return page.evaluate(()=>JSON.parse(localStorage.getItem('sju-whiteboard-v2')));}
 
 test('create, edit, reload and legacy entry share the same app',async({page})=>{
   await mockDrive(page);const errors=await boot(page);await page.locator('#btnAdd').click();await page.locator('#pTitle').fill('Local board');await page.locator('#pClose').click();await page.waitForTimeout(500);
-  expect((await stored(page)).cards[0].title).toBe('Local board');await page.goto('/whiteboard.html');await expect(page).toHaveURL(/index.html/);await page.locator('#homeContinue').click();await expect(page.locator('.ctitle')).toHaveText('Local board');expect(errors).toEqual([]);
+  expect((await stored(page)).cards[0].title).toBe('Local board');await page.goto('/whiteboard.html');await expect(page).toHaveURL(/index.html/);await page.locator('#homeRouteLocal').click();await page.locator('#homeContinue').click();await expect(page.locator('.ctitle')).toHaveText('Local board');expect(errors).toEqual([]);
 });
 test('sanitizer removes active content but preserves supported formatting',async({page})=>{
   await mockDrive(page);await boot(page);
@@ -220,21 +221,24 @@ test('panel duplicate button copies the open card',async({page})=>{
   await selectionBoard(page);await page.locator('[data-id="one"].card').dblclick();await page.locator('#pDuplicate').click();await expect(page.locator('.card')).toHaveCount(4);await page.waitForTimeout(450);expect((await stored(page)).cards[3]).toMatchObject({title:'One',x:132,y:132});
 });
 
-async function createHomeLocal(page,name){await page.locator('#homeNewName').fill(name);await page.locator('#homeDestination').selectOption('local');await page.locator('#homeCreateForm').getByRole('button',{name:'建立白板',exact:true}).click();await expect(page.locator('#home')).toBeHidden();}
+async function createHomeLocal(page,name){await page.locator('#homeRouteLocal').click();await page.locator('#homeNewName').fill(name);await page.locator('#homeCreateForm').getByRole('button',{name:'建立白板',exact:true}).click();await expect(page.locator('#home')).toBeHidden();}
 test('start screen offers optional login and safely continues the cached board',async({page})=>{
-  await mockDrive(page);await page.addInitScript(data=>localStorage.setItem('sju-whiteboard-v2',JSON.stringify(data)),{...empty('Previous work'),savedAt:Date.now()});await boot(page,{showHome:true});await expect(page.locator('#homeLogin')).toBeVisible();await expect(page.locator('#homeCurrentMeta')).toContainText('1 張卡片');await expect(page.locator('#homeContinue')).toHaveText('繼續編輯');await page.locator('#homeContinue').click();await expect(page.locator('.ctitle')).toHaveText('Previous work');await page.locator('#btnHome').click();await expect(page.locator('#home')).toBeVisible();await page.locator('#home').screenshot({path:'/tmp/juice-start-screen.png'});
+  await mockDrive(page);await page.addInitScript(data=>localStorage.setItem('sju-whiteboard-v2',JSON.stringify(data)),{...empty('Previous work'),savedAt:Date.now()});await boot(page,{showHome:true});await expect(page.locator('#homeContinue')).toBeVisible();await page.locator('#homeRouteLocal').click();await expect(page.locator('#homeCurrentMeta')).toContainText('1 張卡片');await expect(page.locator('#homeContinue')).toHaveText('繼續編輯本機白板');await page.locator('#homeContinue').click();await expect(page.locator('.ctitle')).toHaveText('Previous work');await page.locator('#btnHome').click();await expect(page.locator('#home')).toBeVisible();await page.locator('#home').screenshot({path:'/tmp/juice-start-screen.png'});
 });
 test('named local boards retain separate contents across switching and reload',async({page})=>{
-  await mockDrive(page);await boot(page,{showHome:true});await createHomeLocal(page,'Alpha');await page.locator('#btnAdd').click();await page.locator('#pTitle').fill('Alpha content');await page.locator('#btnHome').click();await expect(page.locator('#homeLocalList .home-board strong')).toHaveText(['Alpha']);await createHomeLocal(page,'Beta');await page.locator('#btnAdd').click();await page.locator('#pTitle').fill('Beta content');await page.locator('#btnHome').click();await expect(page.locator('#homeLocalList .home-board')).toHaveCount(2);await page.locator('#homeLocalList .home-board').filter({hasText:'Alpha'}).click();await expect(page.locator('.ctitle')).toHaveText('Alpha content');await expect(page.locator('#boardName')).toHaveText('· Alpha（本機）');await page.reload();await expect(page.locator('#homeCurrentName')).toHaveText('Alpha');await expect(page.locator('#homeLocalList .home-board')).toHaveCount(2);await page.locator('#homeLocalList .home-board').filter({hasText:'Beta'}).click();await expect(page.locator('.ctitle')).toHaveText('Beta content');
+  await mockDrive(page);await boot(page,{showHome:true});await createHomeLocal(page,'Alpha');await page.locator('#btnAdd').click();await page.locator('#pTitle').fill('Alpha content');await page.locator('#btnHome').click();await expect(page.locator('#homeLocalList .home-board strong')).toHaveText(['Alpha']);await createHomeLocal(page,'Beta');await page.locator('#btnAdd').click();await page.locator('#pTitle').fill('Beta content');await page.locator('#btnHome').click();await expect(page.locator('#homeLocalList .home-board')).toHaveCount(2);await page.locator('#homeLocalList .home-board').filter({hasText:'Alpha'}).click();await expect(page.locator('.ctitle')).toHaveText('Alpha content');await expect(page.locator('#boardName')).toHaveText('· Alpha（本機）');await page.reload();await page.locator('#homeRouteLocal').click();await expect(page.locator('#homeCurrentName')).toHaveText('Alpha');await expect(page.locator('#homeLocalList .home-board')).toHaveCount(2);await page.locator('#homeLocalList .home-board').filter({hasText:'Beta'}).click();await expect(page.locator('.ctitle')).toHaveText('Beta content');
 });
 test('Drive login and board selection work directly from the start screen',async({page})=>{
-  const api=await mockDrive(page);await boot(page,{showHome:true});await page.locator('#homeLogin').click();await expect(page.locator('#homeDriveList .home-board')).toHaveCount(2);expect(api.writes).toHaveLength(0);await page.locator('#homeDriveList .home-board').filter({hasText:'Board A'}).click();await expect(page.locator('#home')).toBeHidden();await expect(page.locator('.ctitle')).toHaveText('Remote A');await page.locator('#btnHome').click();await expect(page.locator('#homeCurrentMeta')).toContainText('Google Drive');
+  const api=await mockDrive(page);await boot(page,{showHome:true});await page.locator('#homeContinue').click();await expect(page.locator('#homeDriveList .home-board')).toHaveCount(2);expect(api.writes).toHaveLength(0);await page.locator('#homeDriveList .home-board').filter({hasText:'Board A'}).click();await expect(page.locator('#home')).toBeHidden();await expect(page.locator('.ctitle')).toHaveText('Remote A');await page.locator('#btnHome').click();await expect(page.locator('#homeCurrentMeta')).toContainText('Google Drive');
 });
-test('Drive cache reload is labelled as an offline copy and never writes automatically',async({page})=>{
-  const api=await mockDrive(page);await boot(page);await openBoard(page);await page.reload();await expect(page.locator('#homeCurrentName')).toHaveText('Board A');await expect(page.locator('#homeCurrentMeta')).toContainText('本機副本');await page.locator('#homeContinue').click();await expect(page.locator('#boardName')).toContainText('本機副本');expect(api.writes).toHaveLength(0);
+test('Drive cache reload requires login and explicit cloud selection',async({page})=>{
+  const api=await mockDrive(page);await boot(page);await openBoard(page);await page.reload();
+  await expect(page.locator('#homeContinue')).toHaveText('登入 Google，開啟白板');await page.keyboard.press('Escape');await expect(page.locator('#home')).toBeVisible();
+  await page.locator('#homeContinue').click();await expect(page.locator('#homeDriveList .home-board')).toHaveCount(2);await expect(page.locator('#home')).toBeVisible();
+  await page.locator('#homeDriveList .home-board').filter({hasText:'Board A'}).click();await expect(page.locator('#home')).toBeHidden();await expect(page.locator('.ctitle')).toHaveText('Remote A');expect(api.writes).toHaveLength(0);
 });
 test('start screen import opens a named local board',async({page})=>{
-  await mockDrive(page);await boot(page,{showHome:true});const chooser=page.waitForEvent('filechooser');await page.locator('#homeImport').click();await(await chooser).setFiles({name:'Imported plan.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(empty('Imported content')))});await expect(page.locator('#home')).toBeHidden();await expect(page.locator('#boardName')).toHaveText('· Imported plan（本機）');await expect(page.locator('.ctitle')).toHaveText('Imported content');
+  await mockDrive(page);await boot(page,{showHome:true});await page.locator('#homeRouteLocal').click();const chooser=page.waitForEvent('filechooser');await page.locator('#homeImport').click();await(await chooser).setFiles({name:'Imported plan.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(empty('Imported content')))});await expect(page.locator('#home')).toBeHidden();await expect(page.locator('#boardName')).toHaveText('· Imported plan（本機）');await expect(page.locator('.ctitle')).toHaveText('Imported content');
 });
 test('failed save blocks switching from start screen and preserves pending work',async({page})=>{
   const api=await mockDrive(page,{writeStatus:403});await boot(page);await openBoard(page);await editTitle(page,'Pending');await page.locator('#btnHome').click();await page.locator('#homeDriveList .home-board').filter({hasText:'Board B'}).click();await expect(page.locator('#homeStatus')).toContainText('取消切換');await expect(page.locator('#home')).toBeVisible();await expect(page.locator('#homeCurrentName')).toHaveText('Board A');api.writeStatus=200;await page.locator('#homeContinue').click();await expect(page.locator('.ctitle')).toHaveText('Pending');
@@ -244,7 +248,7 @@ test('start screen works at phone width without horizontal scrolling',async({pag
 });
 
 test('start screen creates a Drive board and pairs a new inbox',async({page})=>{
-  const api=await mockDrive(page);await boot(page,{showHome:true});await page.locator('#homeLogin').click();await expect(page.locator('#homeDriveOption')).toBeEnabled();await page.locator('#homeNewName').fill('New cloud board');await page.locator('#homeDestination').selectOption('drive');await page.locator('#homeCreateForm').getByRole('button',{name:'建立白板',exact:true}).click();await expect(page.locator('#home')).toBeHidden();await expect(page.locator('#boardName')).toHaveText('· New cloud board');expect(api.created.map(f=>f.name)).toEqual(['New cloud board.json','New cloud board-inbox.json']);expect(api.created[1].appProperties.juiceBoardId).toBe(api.created[0].id);
+  const api=await mockDrive(page);await boot(page,{showHome:true});await page.locator('#homeContinue').click();await expect(page.locator('#homeDriveOption')).toBeEnabled();await page.locator('#homeNewName').fill('New cloud board');await page.locator('#homeCreateForm').getByRole('button',{name:'建立白板',exact:true}).click();await expect(page.locator('#home')).toBeHidden();await expect(page.locator('#boardName')).toHaveText('· New cloud board');expect(api.created.map(f=>f.name)).toEqual(['New cloud board.json','New cloud board-inbox.json']);expect(api.created[1].appProperties.juiceBoardId).toBe(api.created[0].id);
 });
 
 test.describe('mobile touch workflow',()=>{
@@ -284,15 +288,15 @@ test.describe('mobile pinch and resizing',()=>{
 
 test('connection status distinguishes login from the current board sync',async({page})=>{
   const api=await mockDrive(page);await boot(page,{showHome:true});
-  await expect(page.locator('#homeConnectionText')).toHaveText('Google 未連線 · 此白板僅存本機');
-  await page.locator('#homeConnectionAction').click();await expect(page.locator('#homeDriveList .home-board')).toHaveCount(2);
-  await expect(page.locator('#homeConnectionText')).toHaveText('Google 已連線 · 此白板僅存本機');
-  await page.locator('#homeContinue').click();await expect(page.locator('#connectionText')).toHaveText('Google 已連線 · 此白板僅存本機');
+  await expect(page.locator('#homeConnectionText')).toHaveText('Google 未連線 · 尚未開啟雲端白板');
+  await page.locator('#homeContinue').click();await expect(page.locator('#homeDriveList .home-board')).toHaveCount(2);
+  await expect(page.locator('#homeConnectionText')).toHaveText('Google 已連線 · 尚未開啟雲端白板');
+  await page.locator('#homeRouteLocal').click();await page.locator('#homeContinue').click();await expect(page.locator('#connectionText')).toHaveText('Google 已連線 · 此白板僅存本機');
   await expect(page.locator('#connectionAction')).toHaveText('選擇 Drive 白板');expect(api.writes).toHaveLength(0);
   await page.locator('#connectionAction').click();await page.locator('.drv-board-name').filter({hasText:'Board A'}).click();
   await expect(page.locator('#connectionText')).toHaveText('Google 已連線 · 此白板已同步 Drive');
-  await page.reload();await expect(page.locator('#homeConnectionText')).toHaveText('Google 未連線 · 此白板是本機副本，未同步 Drive');
-  await page.locator('#homeContinue').click();await expect(page.locator('#connectionText')).toContainText('本機副本，未同步 Drive');await expect(page.locator('#connectionAction')).toHaveText('重新登入 Google');expect(api.writes).toHaveLength(0);
+  await page.reload();await expect(page.locator('#homeConnectionText')).toHaveText('Google 未連線 · 尚未開啟雲端白板');
+  await page.keyboard.press('Escape');await expect(page.locator('#home')).toBeVisible();await expect(page.locator('#homeContinue')).toHaveText('登入 Google，開啟白板');expect(api.writes).toHaveLength(0);
 });
 
 test('connection status reflects failed saves and rejected Google authorization',async({page})=>{
@@ -301,4 +305,41 @@ test('connection status reflects failed saves and rejected Google authorization'
   api.writeStatus=200;await page.locator('#connectionAction').click();await expect(page.locator('#connectionText')).toContainText('已同步 Drive');
   await page.route('https://www.googleapis.com/drive/v3/files/a?alt=media',r=>r.fulfill({status:401,body:'expired'}));
   await editTitle(page,'Expired');await page.locator('#btnSaveNow').click();await expect(page.locator('#connectionText')).toHaveText('Google 授權已到期 · 此白板暫停同步');await expect(page.locator('#connectionAction')).toHaveText('重新登入 Google');
+});
+
+test('cloud starts first and local editing requires choosing the local route',async({page})=>{
+  await mockDrive(page);await boot(page,{showHome:true});await expect(page.locator('#homeRouteDrive')).toHaveAttribute('aria-pressed','true');await expect(page.locator('#homeImport')).toBeHidden();await expect(page.locator('#homeLocalSection')).toBeHidden();
+  await page.keyboard.press('Escape');await expect(page.locator('#home')).toBeVisible();await page.locator('#homeRouteLocal').click();await expect(page.locator('#homeDriveSection')).toBeHidden();await page.locator('#homeContinue').click();await expect(page.locator('#home')).toBeHidden();await expect(page.locator('#connectionText')).toContainText('僅存本機');
+});
+
+test('legacy pending cache is compared and can be saved separately without cloud overwrite',async({page})=>{
+  const api=await mockDrive(page);await page.addInitScript(()=>{const state={boardId:'legacy',cards:[{id:'old',title:'Unsynced legacy content'}],view:{x:0,y:0,zoom:1}};localStorage.setItem('sju-whiteboard-v2',JSON.stringify(state));localStorage.setItem('sju-workspace-meta',JSON.stringify({kind:'drive',id:'a',name:'Board A',boardId:'legacy'}));});
+  await boot(page,{showHome:true});await page.locator('#homeContinue').click();await page.locator('#homeDriveList .home-board').filter({hasText:'Board A'}).click();await expect(page.locator('#recoveryDialog')).toBeVisible();await expect(page.locator('#recoveryLocalSummary')).toContainText('Unsynced legacy content');await expect(page.locator('#recoveryRemoteSummary')).toContainText('Remote A');
+  await page.locator('#recoveryDialog button[value="cancel"]').click();await expect(page.locator('#home')).toBeVisible();expect(api.writes).toHaveLength(0);
+  await page.locator('#homeDriveList .home-board').filter({hasText:'Board A'}).click();await page.locator('#recoveryDialog button[value="local"]').click();await expect(page.locator('#home')).toBeHidden();await expect(page.locator('.ctitle')).toHaveText('Remote A');expect(api.writes).toHaveLength(0);
+  await page.locator('#btnHome').click();await page.locator('#homeRouteLocal').click();await page.locator('#homeLocalList .home-board').filter({hasText:'Board A（復原副本）'}).click();await expect(page.locator('.ctitle')).toHaveText('Unsynced legacy content');await expect(page.locator('#connectionText')).toContainText('僅存本機');
+});
+
+test('expired cloud authorization locks editing and another account never inherits the binding',async({page})=>{
+  const api=await mockDrive(page,{writeStatus:401});await boot(page);await openBoard(page);await editTitle(page,'Alice pending');await page.locator('#btnSaveNow').click();await expect(page.locator('#home')).toBeVisible();expect(await page.locator('#app').evaluate(el=>el.inert)).toBe(true);await page.keyboard.press('Escape');await expect(page.locator('#home')).toBeVisible();
+  api.user={permissionId:'user-b',emailAddress:'bob@example.test',displayName:'Bob'};api.writeStatus=200;await page.locator('#homeContinue').click();await expect(page.locator('#homeAccount')).toContainText('bob@example.test');await expect(page.locator('#homeCurrentName')).not.toHaveText('Board A');
+  expect(await page.evaluate(async()=>{const record=await JuiceCore.get('drive-recovery:user-a');return record.state.cards[0].title;})).toBe('Alice pending');
+  await page.locator('#homeDriveList .home-board').filter({hasText:'Board B'}).click();await expect(page.locator('.ctitle')).toHaveText('Remote B');expect(api.writes).toHaveLength(1);expect(JSON.parse(api.files.a).cards[0].title).toBe('Remote A');
+  await page.locator('#btnHome').click();await page.locator('#homeLogout').click();await expect(page.locator('#homeAccount')).toHaveText('尚未登入 Google');await page.keyboard.press('Escape');await expect(page.locator('#home')).toBeVisible();
+  api.user={permissionId:'user-a',emailAddress:'alice@example.test',displayName:'Alice'};await page.locator('#homeContinue').click();await expect(page.locator('#homeAccount')).toContainText('alice@example.test');await page.locator('#homeDriveList .home-board').filter({hasText:'Board A'}).click();await expect(page.locator('#recoveryLocalSummary')).toContainText('Alice pending');await page.locator('#recoveryDialog button[value="local"]').click();await expect(page.locator('.ctitle')).toHaveText('Remote A');
+});
+
+test('failed identity lookup never enables cloud creation or binding',async({page})=>{
+  const api=await mockDrive(page);api.user={};await boot(page,{showHome:true});await page.locator('#homeContinue').click();await expect(page.locator('#homeStatus')).toContainText('無法確認 Google 帳號');await expect(page.locator('#homeAccount')).toHaveText('尚未登入 Google');await expect(page.locator('#homeDriveList')).toBeHidden();expect(api.writes).toHaveLength(0);
+});
+
+test('timed authorization expiry returns to the cloud gate and same account can reconnect',async({page})=>{
+  await mockDrive(page);await page.clock.install();await boot(page);await openBoard(page);await page.clock.fastForward(3600001);await expect(page.locator('#home')).toBeVisible();await expect(page.locator('#homeContinue')).toHaveText('登入 Google，開啟白板');await page.keyboard.press('Escape');await expect(page.locator('#home')).toBeVisible();
+  await page.locator('#homeContinue').click();await expect(page.locator('#homeAccount')).toContainText('alice@example.test');await expect(page.locator('#homeContinue')).toHaveText('繼續編輯雲端白板');await page.locator('#homeContinue').click();await expect(page.locator('.ctitle')).toHaveText('Remote A');
+});
+
+test('logging in from local editor cannot expose a restored cloud cache for editing',async({page})=>{
+  await mockDrive(page);await boot(page);await page.evaluate(async()=>{await JuiceCore.set('drive-recovery:user-a',{meta:{kind:'cache',id:'a',ownerId:'user-a',pending:true,name:'Private cloud'},state:{boardId:'pending-a',cards:[{id:'private',title:'Pending cloud content'}]}});});
+  await page.locator('#btnDrive').click();await expect(page.locator('#home')).toBeVisible();await expect(page.locator('#homeAccount')).toContainText('alice@example.test');await page.keyboard.press('Escape');await expect(page.locator('#home')).toBeVisible();expect(await page.locator('#app').evaluate(el=>el.inert)).toBe(true);
+  await page.locator('#homeDriveList .home-board').filter({hasText:'Board A'}).click();await expect(page.locator('#recoveryLocalSummary')).toContainText('Pending cloud content');await page.locator('#recoveryDialog button[value="cancel"]').click();await expect(page.locator('#home')).toBeVisible();
 });

@@ -231,28 +231,32 @@
 
 <div id="home" role="dialog" aria-modal="true" aria-labelledby="homeTitle" hidden>
   <main class="home-shell">
-    <header class="home-head"><span class="home-mark">聚</span><div><h1 id="homeTitle">從哪張白板開始？</h1><p>接續思考，或開啟一張新的白板。</p></div></header>
+    <header class="home-head"><span class="home-mark">聚</span><div><h1 id="homeTitle">從哪張白板開始？</h1><p>使用自己的 Google Drive，或明確選擇只在此裝置使用。</p></div></header>
+    <nav class="home-routes" aria-label="使用方式"><button id="homeRouteDrive" aria-pressed="true">Google Drive 白板</button><button id="homeRouteLocal" aria-pressed="false">只在此裝置使用</button></nav>
+    <p id="homeRouteHint" class="home-note"></p>
     <section class="home-resume" aria-label="接續編輯">
       <div><span class="home-eyebrow" id="homeEyebrow">繼續上次編輯</span><h2 id="homeCurrentName">本機白板</h2><p id="homeCurrentMeta"></p></div>
       <button id="homeContinue" class="home-primary">繼續編輯</button>
       <div class="home-small-actions"><button id="homeExport">匯出目前白板</button><button id="homeRaw" hidden>下載原始備份</button></div>
     </section>
     <div class="home-connection"><span id="homeConnectionText" role="status" aria-live="polite"></span><button id="homeConnectionAction" type="button"></button></div>
+    <section id="homeRecovery" class="home-section" hidden><h2>有一份待確認的雲端備份</h2><p>這份內容不會直接編輯或自動上傳。請先匯出，或另存為獨立本機白板。重新登入並選取雲端白板時會比較版本。</p><button id="homeRecoveryExport">匯出備份</button><button id="homeRecoveryLocal">另存為本機白板</button></section>
     <p id="homeStatus" role="status" aria-live="polite"></p>
     <div class="home-columns">
-      <section class="home-section"><div class="home-section-head"><h2>我的 Google Drive 白板</h2><button id="homeDriveRefresh" hidden>重新整理</button><button id="homeLogout" hidden>登出</button></div>
-        <div id="homeDriveLogin"><p>登入後選擇白板，讓內容在裝置間同步。</p><button id="homeLogin" class="home-primary">登入 Google Drive</button><p class="home-note">也可以先在本機開始，不需要登入。</p></div>
+      <section class="home-section" id="homeDriveSection"><div class="home-section-head"><h2>我的 Google Drive 白板</h2><button id="homeDriveRefresh" hidden>重新整理</button><button id="homeLogout" hidden>登出</button></div>
+        <p id="homeAccount" class="home-note"></p><button id="homeSwitchAccount" hidden>切換 Google 帳號</button><div id="homeDriveLogin"><p>登入後選擇白板，讓內容在裝置間同步。</p><button id="homeLogin" class="home-primary">登入 Google Drive</button><p class="home-note">每個人登入自己的帳號，選取自己的白板。</p></div>
         <div id="homeDriveList" hidden></div>
       </section>
       <section class="home-section"><h2>建立新白板</h2><form id="homeCreateForm">
         <label for="homeNewName">白板名稱</label><input id="homeNewName" maxlength="200" placeholder="例如：旅行計畫" required>
-        <label for="homeDestination">儲存位置</label><select id="homeDestination"><option value="local">這個瀏覽器</option><option id="homeDriveOption" value="drive" disabled>Google Drive（請先登入）</option></select>
-        <p class="home-note">本機白板只保存在此瀏覽器，重要內容請定期匯出。</p><button type="submit" class="home-primary">建立白板</button>
+        <label for="homeDestination" hidden>儲存位置</label><select id="homeDestination" hidden><option value="local">這個瀏覽器</option><option id="homeDriveOption" value="drive" disabled>Google Drive（請先登入）</option></select>
+        <p class="home-note" id="homeCreateHint"></p><button type="submit" class="home-primary">建立白板</button>
       </form><button id="homeImport" class="home-import">從 JSON 備份匯入白板</button></section>
     </div>
-    <section class="home-section"><div class="home-section-head"><h2>這個瀏覽器的白板</h2></div><div id="homeLocalList"></div></section>
+    <section class="home-section" id="homeLocalSection"><div class="home-section-head"><h2>這個瀏覽器的白板</h2></div><div id="homeLocalList"></div></section>
   </main>
 </div>
+<dialog id="recoveryDialog" aria-labelledby="recoveryTitle"><h2 id="recoveryTitle">確認本機備份與 Drive 版本</h2><p>本機備份可能含有尚未同步的修改。請選擇如何保留；不會自動合併或覆蓋 Drive。</p><div class="recovery-columns"><section><h3>本機備份</h3><pre id="recoveryLocalSummary"></pre></section><section><h3>Drive 版本</h3><pre id="recoveryRemoteSummary"></pre></section></div><button id="recoveryDownload">匯出本機備份</button><form method="dialog"><button value="cancel">取消</button><button value="local">另存本機白板，再開啟 Drive</button><button value="remote">保留復原備份，開啟 Drive</button></form></dialog>
 <script src="assets/core.js"></script>
 <script src="assets/app.js"></script>
 </body>
