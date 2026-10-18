@@ -157,10 +157,10 @@
     const meta=currentWorkspace(),source=meta.kind==='drive'?(gdReady()?'Google Drive':'Google Drive（需重新登入）'):meta.kind==='file'?'本機同步檔':meta.kind==='cache'?'本機副本（重新登入並選取後才會同步）':'這個瀏覽器';
     $('homeCurrentName').textContent=meta.name||'本機白板';$('homeEyebrow').textContent=state.cards.length||state.savedAt?'繼續上次編輯':'開始使用';
     $('homeCurrentMeta').textContent=`${source} · ${state.cards.length} 張卡片 · ${workspaceTime(state.savedAt)}`;
-    $('homeContinue').textContent=state.cards.length||state.savedAt?'繼續編輯':'先在本機開始';$('homeContinue').disabled=loadFailed;
+    $('homeContinue').textContent=meta.kind==='cache'?'繼續編輯本機副本':state.cards.length||state.savedAt?'繼續編輯':'先在本機開始';$('homeContinue').disabled=loadFailed;
     $('homeRaw').hidden=!loadFailed;$('homeExport').disabled=loadFailed;
     $('homeStatus').textContent=loadFailed?'目前本機資料無法讀取，請先下載原始備份修復；原資料不會被覆蓋。':gdDirty?'目前白板尚有未同步的編輯；切換時會先嘗試保存。':'';
-    renderHomeLocal();renderHomeDrive();
+    updateConnectionStatus();renderHomeLocal();renderHomeDrive();
   }
   async function renderHomeLocal(){
     const list=$('homeLocalList');list.textContent='載入中…';list.className='home-board-list';
@@ -1045,7 +1045,7 @@
   function gdInboxName(name){return name.replace(/\.json$/,'')+'-inbox.json';}
   async function gdFetch(url,opts={}){
     try{return await Core.request(url,opts,gdToken?.access_token);}
-    catch(e){if(e.status===401){gdToken=null;clearTimeout(gdRefreshTimer);updateDriveBtn();updateSaveStatus();}throw e;}
+    catch(e){if(e.status===401){gdToken=null;clearTimeout(gdRefreshTimer);updateDriveBtn();updateSaveStatus();if(!home.hidden)renderHomeDrive();}throw e;}
   }
   function gdLogin(){
     if(!window.google?.accounts?.oauth2){showBanner('Google 登入服務載入中，請稍後再試。');return;}
@@ -1142,9 +1142,29 @@
       resetScene();updateDriveBtn();updateInboxLink();updateInboxBadge();updateSaveStatus();showBanner('已載入白板「'+fileName.replace(/\.json$/,'')+'」');
     });
   }
+  function updateConnectionStatus(){
+    const ready=gdReady(),bound=!!gdCurrentFileId;
+    const connection=ready?'Google 已連線':bound?'Google 授權已到期':'Google 未連線';
+    const storage=bound?(!ready?'此白板暫停同步':gdSaving?'此白板同步中…':gdConflict?'此白板同步衝突':gdError?'此白板同步失敗':gdDirty?'此白板待同步':'此白板已同步 Drive')
+      :syncHandle?'此白板使用同步檔':workspaceMeta.kind==='cache'?'此白板是本機副本，未同步 Drive':'此白板僅存本機';
+    const text=connection+' · '+storage;
+    const action=!ready?(bound||workspaceMeta.kind==='cache'?'重新登入 Google':'登入 Google'):!bound?'選擇 Drive 白板':gdConflict?'查看 Drive 白板':gdError||gdDirty?'立即同步':'管理 Drive';
+    $('connectionText').textContent=text;$('homeConnectionText').textContent=text;
+    $('connectionAction').textContent=action;$('homeConnectionAction').textContent=action;
+    const detail=bound?'此白板已連結 Google Drive；授權有效時會自動同步。':'登入後還需要選取 Drive 白板，才會啟用這張雲端白板的同步。繼續編輯本機副本只會儲存在此瀏覽器。';
+    $('connectionStatus').title=detail;$('homeConnectionText').title=detail;
+  }
+  function connectionAction(){
+    if(!gdReady()){gdLogin();return;}
+    if(gdCurrentFileId&&!gdConflict&&(gdError||gdDirty)){$('btnSaveNow').click();return;}
+    if(home.hidden)openDriveModal();else $('homeDriveList').scrollIntoView({block:'nearest',behavior:'smooth'});
+  }
+  $('connectionAction').addEventListener('click',connectionAction);
+  $('homeConnectionAction').addEventListener('click',connectionAction);
   function updateDriveBtn(){
     const meta=currentWorkspace(),name=meta.name||'本機白板';
-    $('driveBtnLbl').textContent=gdReady()?(gdCurrentFileName?.replace(/\.json$/,'')||'Drive'):gdCurrentFileId?'Drive（需登入）':'Drive';
+    $('driveBtnLbl').textContent=gdReady()?'Google 已連線':gdCurrentFileId?'Google 需重新登入':'登入 Google';
+    updateConnectionStatus();
     const location=meta.kind==='local'?'（本機）':meta.kind==='cache'?'（本機副本）':meta.kind==='file'?'（同步檔）':'';
     $('boardName').textContent='· '+name+location;document.title=name+' · 聚思';
     $('driveAvatar').style.display='none';$('driveCloudIcon').style.display='';
@@ -1177,7 +1197,7 @@
   function updateSaveStatus(){
     const active=!!gdCurrentFileId;$('saveStatus').style.display=active?'':'none';$('btnSaveNow').style.display=active?'':'none';
     $('btnSaveNow').classList.toggle('saving',gdSaving);$('btnSaveNow').disabled=gdSaving;
-    $('saveStatus').textContent=!gdReady()?'需重新登入':gdSaving?'儲存中…':gdConflict?'同步衝突':gdError?'同步失敗，請重試':gdDirty?'尚未同步':fmtAgo(gdLastSavedAt);updateMobileStatus();
+    $('saveStatus').textContent=!gdReady()?'需重新登入':gdSaving?'儲存中…':gdConflict?'同步衝突':gdError?'同步失敗，請重試':gdDirty?'尚未同步':fmtAgo(gdLastSavedAt);updateMobileStatus();updateConnectionStatus();
   }
   $('btnSaveNow').addEventListener('click',async()=>{if(!gdReady()){gdLogin();return;}if(saveTimer)save();if(await gdWriteFile())showBanner('已儲存到 Drive ✓');});
   setInterval(updateSaveStatus,30000);

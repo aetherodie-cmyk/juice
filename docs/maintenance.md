@@ -97,3 +97,7 @@ Google Cloud Console 必須人工確認：
 - [Drive scopes](https://developers.google.com/workspace/drive/api/guides/api-specific-auth)
 - [Drive files.update](https://developers.google.com/workspace/drive/api/reference/rest/v3/files/update)
 - [GitHub Pages 發布來源](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site)
+
+### Google 連線與白板同步狀態
+
+主頁與編輯畫面會分別顯示 Google 授權狀態及目前白板的儲存目的地。登入成功不代表已啟用白板同步；需明確選取 Drive 白板。重新整理後，雲端內容保留為本機副本，按「繼續編輯本機副本」不會自動上傳。狀態列提供登入、選取白板、立即同步或管理 Drive 的入口，並顯示授權到期、待同步、同步失敗及衝突。狀態列保留獨立空間，不遮住畫布。

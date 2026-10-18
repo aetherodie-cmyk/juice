@@ -179,7 +179,7 @@ test('duplicate preserves rich content, remaps IDs and only copies internal link
   await page.locator('#btnUndo').click();await expect(page.locator('.card')).toHaveCount(3);await page.locator('#btnRedo').click();await expect(page.locator('.card')).toHaveCount(5);await page.waitForTimeout(500);expect((await stored(page)).cards[3].id).toBe(a.id);
 });
 test('batch move and delete each undo and redo in one step',async({page})=>{
-  await selectionBoard(page);await selectFirstTwo(page);await rectangle(page,140,177,200,217);await page.locator('#btnUndo').click();await page.waitForTimeout(500);expect((await stored(page)).cards.map(c=>[c.x,c.y])).toEqual([[100,100],[400,100],[800,400]]);
+  await selectionBoard(page);await selectFirstTwo(page);const box=await page.locator('[data-id="one"].card').boundingBox();await rectangle(page,box.x+40,box.y+25,box.x+100,box.y+65);await page.locator('#btnUndo').click();await page.waitForTimeout(500);expect((await stored(page)).cards.map(c=>[c.x,c.y])).toEqual([[100,100],[400,100],[800,400]]);
   await page.locator('#btnRedo').click();await page.waitForTimeout(500);expect((await stored(page)).cards[0].x).toBe(160);await page.keyboard.press('Delete');await expect(page.locator('.card')).toHaveCount(1);await page.locator('#btnUndo').click();await expect(page.locator('.card')).toHaveCount(3);await expect(page.locator('.card.sel')).toHaveCount(2);await page.locator('#btnRedo').click();await expect(page.locator('.card')).toHaveCount(1);
 });
 test('new content action clears redo while pan and zoom do not create history',async({page})=>{
@@ -255,7 +255,7 @@ test.describe('mobile touch workflow',()=>{
   test('touch drag browses the canvas until move mode is enabled',async({page})=>{
     await selectionBoard(page);const session=await page.context().newCDPSession(page);
     async function swipe(x,y,dx,dy){await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});for(let i=1;i<=5;i++)await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x+dx*i/5,y:y+dy*i/5}]});await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});}
-    await swipe(140,175,50,40);await expect(page.locator('#panel')).not.toHaveClass('open');await page.waitForTimeout(450);let data=await stored(page);expect(data.cards[0]).toMatchObject({x:100,y:100});expect(data.view).toMatchObject({x:50,y:40});await page.locator('#mobileMove').tap();await expect(page.locator('#mobileMove')).toHaveAttribute('aria-pressed','true');await swipe(190,215,40,30);await page.waitForTimeout(450);data=await stored(page);expect(data.cards[0]).toMatchObject({x:140,y:130});expect(data.view).toMatchObject({x:50,y:40});
+    let box=await page.locator('[data-id="one"].card').boundingBox();await swipe(box.x+40,box.y+23,50,40);await expect(page.locator('#panel')).not.toHaveClass('open');await page.waitForTimeout(450);let data=await stored(page);expect(data.cards[0]).toMatchObject({x:100,y:100});expect(data.view).toMatchObject({x:50,y:40});await page.locator('#mobileMove').tap();await expect(page.locator('#mobileMove')).toHaveAttribute('aria-pressed','true');box=await page.locator('[data-id="one"].card').boundingBox();await swipe(box.x+40,box.y+23,40,30);await page.waitForTimeout(450);data=await stored(page);expect(data.cards[0]).toMatchObject({x:140,y:130});expect(data.view).toMatchObject({x:50,y:40});
   });
   test('mobile search finds card text and opens the result',async({page})=>{
     await selectionBoard(page);await page.locator('#mobileFind').tap();await page.locator('#mobileQuery').fill('Three');await expect(page.locator('#mobileResults button')).toHaveText('Three');await page.locator('#mobileResults button').tap();await expect(page.locator('#pTitle')).toHaveValue('Three');await expect(page.locator('#mobileFinder')).toBeHidden();
@@ -280,4 +280,25 @@ test.describe('mobile pinch and resizing',()=>{
   test('changing to desktop restores the existing toolbar and preserves content',async({page})=>{
     await selectionBoard(page);await expect(page.locator('#mobileNav #btnAdd')).toBeVisible();await page.setViewportSize({width:844,height:390});await expect(page.locator('#mobileNav #btnAdd')).toBeVisible();await page.setViewportSize({width:1280,height:800});await expect(page.locator('#toolbarActions #btnAdd')).toBeVisible();await expect(page.locator('#mobileNav')).toBeHidden();await page.locator('[data-id="one"].card').dblclick();await expect(page.locator('#pTitle')).toHaveValue('One');await expect(page.locator('#pClose')).toHaveText('收起');
   });
+});
+
+test('connection status distinguishes login from the current board sync',async({page})=>{
+  const api=await mockDrive(page);await boot(page,{showHome:true});
+  await expect(page.locator('#homeConnectionText')).toHaveText('Google 未連線 · 此白板僅存本機');
+  await page.locator('#homeConnectionAction').click();await expect(page.locator('#homeDriveList .home-board')).toHaveCount(2);
+  await expect(page.locator('#homeConnectionText')).toHaveText('Google 已連線 · 此白板僅存本機');
+  await page.locator('#homeContinue').click();await expect(page.locator('#connectionText')).toHaveText('Google 已連線 · 此白板僅存本機');
+  await expect(page.locator('#connectionAction')).toHaveText('選擇 Drive 白板');expect(api.writes).toHaveLength(0);
+  await page.locator('#connectionAction').click();await page.locator('.drv-board-name').filter({hasText:'Board A'}).click();
+  await expect(page.locator('#connectionText')).toHaveText('Google 已連線 · 此白板已同步 Drive');
+  await page.reload();await expect(page.locator('#homeConnectionText')).toHaveText('Google 未連線 · 此白板是本機副本，未同步 Drive');
+  await page.locator('#homeContinue').click();await expect(page.locator('#connectionText')).toContainText('本機副本，未同步 Drive');await expect(page.locator('#connectionAction')).toHaveText('重新登入 Google');expect(api.writes).toHaveLength(0);
+});
+
+test('connection status reflects failed saves and rejected Google authorization',async({page})=>{
+  const api=await mockDrive(page,{writeStatus:403});await boot(page);await openBoard(page);await editTitle(page,'Unsaved');await page.locator('#btnSaveNow').click();
+  await expect(page.locator('#connectionText')).toContainText('同步失敗');await expect(page.locator('#connectionAction')).toHaveText('立即同步');
+  api.writeStatus=200;await page.locator('#connectionAction').click();await expect(page.locator('#connectionText')).toContainText('已同步 Drive');
+  await page.route('https://www.googleapis.com/drive/v3/files/a?alt=media',r=>r.fulfill({status:401,body:'expired'}));
+  await editTitle(page,'Expired');await page.locator('#btnSaveNow').click();await expect(page.locator('#connectionText')).toHaveText('Google 授權已到期 · 此白板暫停同步');await expect(page.locator('#connectionAction')).toHaveText('重新登入 Google');
 });

@@ -85,6 +85,7 @@
     </div>
   </div>
 
+  <div id="connectionStatus" class="connection-status"><span id="connectionText" role="status" aria-live="polite"></span><button id="connectionAction" type="button"></button></div>
   <div id="canvas"><div id="selectionBox" hidden></div><div id="world"><svg id="linkLayer"><defs>
     <marker id="arrowhead" markerWidth="14" markerHeight="14" refX="9" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,4 L0,8 Z" fill="#8A93A3"/></marker>
     <marker id="arrowstart" markerWidth="14" markerHeight="14" refX="0" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,4 L9,8 Z" fill="#8A93A3"/></marker>
@@ -236,6 +237,7 @@
       <button id="homeContinue" class="home-primary">繼續編輯</button>
       <div class="home-small-actions"><button id="homeExport">匯出目前白板</button><button id="homeRaw" hidden>下載原始備份</button></div>
     </section>
+    <div class="home-connection"><span id="homeConnectionText" role="status" aria-live="polite"></span><button id="homeConnectionAction" type="button"></button></div>
     <p id="homeStatus" role="status" aria-live="polite"></p>
     <div class="home-columns">
       <section class="home-section"><div class="home-section-head"><h2>我的 Google Drive 白板</h2><button id="homeDriveRefresh" hidden>重新整理</button><button id="homeLogout" hidden>登出</button></div>
