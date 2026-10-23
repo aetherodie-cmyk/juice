@@ -70,6 +70,10 @@ test('free-position text persists with its appearance and layer',async({page})=>
   await page.locator('.noteobj').fill('白板標註');await page.locator('#noteSize').fill('28');await page.locator('#noteColor').fill('#c5403b');await page.locator('#noteLayer').selectOption('below');await page.waitForTimeout(500);
   expect((await stored(page)).notes[0]).toMatchObject({text:'白板標註',size:28,color:'#c5403b',layer:'below'});
 });
+test('graph editing keeps source visible and synchronizes both ways',async({page})=>{
+  await mockDrive(page);await mockPele(page);await boot(page);await page.locator('#btnFlow').click();await page.locator('.flow-studio-open').click();await page.getByRole('button',{name:'圖形拖拉工具',exact:true}).click();
+  const source=page.locator('#flowStudio textarea');await expect(source).toBeVisible();await source.fill('flowchart TD\nA[原始文字] --> B[下一步]\nstyle A fill:#ffeeaa');await expect(page.locator('.fb-node')).toHaveCount(2);await expect(page.locator('.fb-node').first()).toHaveText('原始文字');await page.locator('[data-add="rect"]').click();await expect(source).toHaveValue(/style A fill:#ffeeaa/);await expect(source).toHaveValue(/flowchart TD/);await expect(source).toHaveValue(/新步驟/);
+});
 test('diagram blocks survive JSON import, legacy normalization and Drive round trips',async({page})=>{
   const api=await mockDrive(page);await mockPele(page);await boot(page);
   const imported={schemaVersion:3,cards:[{id:'flow',x:30,y:40,title:'Imported flow',blocks:[{id:'diagram-block',type:'diagram',html:'flowchart LR\nA --&gt; B'}],tags:[]}],links:[],groups:[],images:[],view:{x:0,y:0,zoom:1}};

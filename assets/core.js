@@ -50,6 +50,7 @@ window.JuiceCore = (() => {
     if(!blocks || !blocks.length)blocks=[block({})];
     const result={id:id(c.id),x:num(c.x),y:num(c.y),color:COLORS.has(c.color)?c.color:'paper',shape:['note','rect','pill'].includes(c.shape)?c.shape:'note',title,blocks,tags:array(c.tags,100).map(t=>text(t,200)),collapsed:!!c.collapsed,createdAt:num(c.createdAt,Date.now(),0,1e15),updatedAt:num(c.updatedAt,c.createdAt||Date.now(),0,1e15)};
     if(c.w != null)result.w=num(c.w,240,180,960);
+    if(c.z != null)result.z=num(c.z,0,-100000,100000);
     if(c.sourceInbox)result.sourceInbox=text(c.sourceInbox,300);
     return result;
   }
@@ -61,7 +62,7 @@ window.JuiceCore = (() => {
     const groups=unique(array(d.groups).map(g=>{assert(object(g));return{id:id(g.id),x:num(g.x),y:num(g.y),w:num(g.w,240,1),h:num(g.h,160,1),title:text(g.title,10000)||'群組'};}));
     const images=unique(array(d.images,1000).map(i=>{assert(object(i));return{id:id(i.id),x:num(i.x),y:num(i.y),w:num(i.w,600,1),src:safeImage(i.src),opacity:num(i.opacity,0.55,0,1)};}));
     const icons=unique(array(d.icons,1000).map(i=>{assert(object(i));return{id:id(i.id),x:num(i.x),y:num(i.y),name:ICONS.has(i.name)?i.name:'idea',size:num(i.size,44,18,160),layer:i.layer==='below'?'below':'above'};}));
-    const notes=unique(array(d.notes,1000).map(n=>{assert(object(n));return{id:id(n.id),x:num(n.x),y:num(n.y),text:text(n.text,10000),size:num(n.size,20,12,72),color:/^#[0-9a-f]{6}$/i.test(n.color||'')?n.color:'#2A3038',layer:n.layer==='below'?'below':'above'};}));
+    const notes=unique(array(d.notes,1000).map(n=>{assert(object(n));return{id:id(n.id),x:num(n.x),y:num(n.y),w:num(n.w,280,40,1600),text:text(n.text,10000),size:num(n.size,20,12,72),color:/^#[0-9a-f]{6}$/i.test(n.color||'')?n.color:'#2A3038',layer:n.layer==='below'?'below':'above'};}));
     const v=d.view||{};assert(object(v));
     return {schemaVersion:3,boardId:id(d.boardId),cards,links,groups,images,icons,notes,view:{x:num(v.x),y:num(v.y),zoom:num(v.zoom,1,0.3,2.5)},savedAt:num(d.savedAt,0,0,1e15)};
   }
