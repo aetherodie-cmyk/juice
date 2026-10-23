@@ -542,3 +542,11 @@ button.brand:hover{opacity:.85;}
 /* Use one primary login entry before showing cloud board controls. */
 #home.home-needs-login .home-columns{display:none;}
 #home .home-connection button{display:none;}
+
+
+/* Juice x Pele: flowchart block (MVP) */
+.card:has(.pvdiagram) { width: min(480px, 72vw); }
+.pvdiagram, .pele-preview { min-width: 0; overflow: auto; background: rgba(255,255,255,.62); border-radius: 9px; padding: 8px; }
+.pvdiagram svg, .pele-preview svg { display: block; max-width: 100%; height: auto; }
+.pele-source { box-sizing: border-box; width: 100%; min-height: 185px; padding: 11px; font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px solid #cbd5e1; border-radius: 8px; resize: vertical; background: #fff; color: #172236; }
+.pele-preview { margin-top: 12px; min-height: 90px; }

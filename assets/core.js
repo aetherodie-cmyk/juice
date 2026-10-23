@@ -2,7 +2,7 @@
 'use strict';
 window.JuiceCore = (() => {
   const MAX_BYTES = 20 * 1024 * 1024;
-  const TYPES = new Set('text h1 h2 h3 bullet number todo quote callout code divider image'.split(' '));
+  const TYPES = new Set('text h1 h2 h3 bullet number todo quote callout code divider image diagram'.split(' '));
   const COLORS = new Set('paper amber sage blue rose lavender grey'.split(' '));
   const uid = () => crypto.randomUUID();
   const object = x => x && typeof x === 'object' && !Array.isArray(x);

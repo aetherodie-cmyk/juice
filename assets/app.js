@@ -9,7 +9,7 @@
     {t:'text',label:'內文',icon:'¶'},{t:'h1',label:'標題 1',icon:'H1'},{t:'h2',label:'標題 2',icon:'H2'},{t:'h3',label:'標題 3',icon:'H3'},
     {t:'bullet',label:'項目清單',icon:'•'},{t:'number',label:'編號清單',icon:'1.'},{t:'todo',label:'待辦清單',icon:'☑'},
     {t:'quote',label:'引言',icon:'❝'},{t:'callout',label:'重點框',icon:'※'},{t:'code',label:'程式碼',icon:'</>'},
-    {t:'divider',label:'分隔線',icon:'—'},{t:'image',label:'圖片',icon:'IMG'}];
+    {t:'divider',label:'分隔線',icon:'—'},{t:'image',label:'圖片',icon:'IMG'},{t:'diagram',label:'流程圖',icon:'◇'}];
   const VALID_TYPES=new Set(BLOCK_TYPES.map(b=>b.t));
   const PLACE={text:'輸入文字…',h1:'標題',h2:'標題',h3:'標題',bullet:'清單項目',number:'清單項目',todo:'待辦事項',quote:'引言',callout:'重點',code:'程式碼'};
 
@@ -389,6 +389,7 @@
       else if(b.type==='code')out+='<div class="pvcode">'+escapeHtml(plainText(txt))+'</div>';
       else if(b.type==='divider')out+='<div class="pvhr"></div>';
       else if(b.type==='image')out+=(b.src?'<img class="pvimg" src="'+escapeAttr(b.src)+'">':'');
+       else if(b.type==='diagram')out+='<div class="pvdiagram" data-flow-block="'+escapeAttr(b.id)+'"></div>';
       else out+='<div>'+txt+'</div>';
       n++;}
     return {html:out,hidden};}
@@ -408,7 +409,12 @@
       more.addEventListener('pointerdown',e=>{e.stopPropagation();e.preventDefault();openPanel(c);});pv.appendChild(more);}
     tg.innerHTML='';
     (c.tags||[]).forEach(t=>{const s=document.createElement('span');s.className='ctag';s.textContent='#'+t;tg.appendChild(s);});
-    tg.style.display=(c.tags&&c.tags.length)?'':'none';}
+    tg.style.display=(c.tags&&c.tags.length)?'':'none';
+    // Juice x Pele: paint each Mermaid block without changing existing cards.
+    pv.querySelectorAll('.pvdiagram').forEach(host=>{
+      const block=(c.blocks||[]).find(b=>b.id===host.dataset.flowBlock);
+      window.JuicePeleFlow.draw(host,window.JuicePeleFlow.decode(block?.html||''));
+    });}
   const placeCard=c=>{const el=cardEls.get(c.id);el.style.left=c.x+'px';el.style.top=c.y+'px';};
   const applyCardColor=c=>{const el=cardEls.get(c.id),col=COLORS[c.color];el.style.background=col.bg;el.style.borderColor=col.border;};
   function applyCardShape(c){const el=cardEls.get(c.id);if(!el)return;el.classList.remove('shape-rect','shape-pill');if(c.shape==='rect')el.classList.add('shape-rect');else if(c.shape==='pill')el.classList.add('shape-pill');}
@@ -562,6 +568,18 @@
       else{const ph=document.createElement('div');ph.className='imgph';ph.textContent='點擊上傳圖片';
         ph.addEventListener('click',()=>pickImage(src=>{b.src=src;touch(c);scheduleSave();renderTile(c);renderBlocks(c);}));main.appendChild(ph);}
       return el;}
+    if(b.type==='diagram'){
+      const editor=document.createElement('textarea');editor.className='pele-source';
+      editor.setAttribute('aria-label','Mermaid 流程圖原始碼');
+      editor.maxLength=window.JuicePeleFlow.MAX_SOURCE_LENGTH;
+      editor.value=window.JuicePeleFlow.decode(b.html||'');
+      const preview=document.createElement('div');preview.className='pele-preview';
+      const repaint=()=>window.JuicePeleFlow.draw(preview,editor.value);repaint();
+      let paintTimer;editor.addEventListener('input',()=>{
+        b.html=escapeHtml(editor.value);touch(c);scheduleSave('block:'+c.id+':'+b.id);
+        clearTimeout(paintTimer);paintTimer=setTimeout(()=>{repaint();renderTile(c);refreshLinksFor(c.id);},220);
+      });main.append(editor,preview);return el;
+    }
     if(b.type==='todo'){const chk=document.createElement('div');chk.className='chk';chk.textContent=b.checked?'✓':'';
       chk.addEventListener('click',()=>{b.checked=!b.checked;el.classList.toggle('done',b.checked);chk.textContent=b.checked?'✓':'';touch(c);renderTile(c);scheduleSave();});main.appendChild(chk);}
     if(b.type==='bullet'){const m=document.createElement('div');m.className='marker';m.textContent='•';main.appendChild(m);}
@@ -605,10 +623,10 @@
     if(index<c.blocks.length-1)items.push({icon:'↓',label:'下移',onClick:()=>moveBlock(index,1)});
     items.push({icon:'🗑',label:'刪除區塊',danger:true,onClick:()=>deleteBlock(index)});
     showMenu(items,r.left,r.bottom+4,'轉換類型');}
-  function insertAfter(index,type){const c=curCard();if(!c)return;const nb=mkBlock(type,'');c.blocks.splice(index+1,0,nb);touch(c);scheduleSave();
+  function insertAfter(index,type){const c=curCard();if(!c)return;const nb=mkBlock(type,type==='diagram'?escapeHtml(window.JuicePeleFlow.TEMPLATE):'');c.blocks.splice(index+1,0,nb);touch(c);scheduleSave();
     if(type==='image'){renderBlocks(c);pickImage(src=>{nb.src=src;touch(c);scheduleSave();renderTile(c);renderBlocks(c);});}
     else if(type==='divider'){renderTile(c);renderBlocks(c);}else renderBlocks(c,nb.id);}
-  function changeType(b,type){const c=curCard();if(!c)return;b.type=type;if(type!=='todo')b.checked=false;touch(c);scheduleSave();
+  function changeType(b,type){const c=curCard();if(!c)return;b.type=type;if(type!=='todo')b.checked=false;if(type==='diagram'&&!plainText(b.html).trim())b.html=escapeHtml(window.JuicePeleFlow.TEMPLATE);touch(c);scheduleSave();
     if(type==='image'&&!b.src){renderBlocks(c);pickImage(src=>{b.src=src;touch(c);scheduleSave();renderTile(c);renderBlocks(c);});}
     else{renderTile(c);renderBlocks(c,(type!=='divider'&&type!=='image')?b.id:null);}}
   function moveBlock(index,dir){const c=curCard();if(!c)return;const j=index+dir;if(j<0||j>=c.blocks.length)return;
@@ -783,6 +801,14 @@
 
   // ---------- toolbar ----------
   $('btnAdd').addEventListener('click',()=>{const r=canvas.getBoundingClientRect();const w=screenToWorld(r.left+r.width/2,r.top+r.height/2);addCard(w.x,w.y);});
+  // Juice x Pele: create a normal Juice card containing one diagram block.
+  $('btnFlow').addEventListener('click',()=>{
+    const r=canvas.getBoundingClientRect();
+    const w=screenToWorld(r.left+r.width/2,r.top+r.height/2);
+    const c=addCard(w.x,w.y);c.title='新流程圖';
+    c.blocks=[mkBlock('diagram',escapeHtml(window.JuicePeleFlow.TEMPLATE))];
+    pTitle.value=c.title;renderTile(c);renderBlocks(c);touch(c);scheduleSave();
+  });
   $('btnGroup').addEventListener('click',makeGroup);
   $('btnZoomIn').addEventListener('click',()=>setZoom(state.view.zoom*1.15));
   $('btnZoomOut').addEventListener('click',()=>setZoom(state.view.zoom/1.15));

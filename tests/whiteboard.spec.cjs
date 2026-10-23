@@ -27,6 +27,9 @@ async function mockDrive(page,{writeStatus=200,bad=false,name='Board A.json'}={}
   });
   return api;
 }
+async function mockPele(page){
+  await page.route('https://cdn.jsdelivr.net/npm/pele@1.9.0/dist/pele.global.js',route=>route.fulfill({contentType:'application/javascript',body:`window.pele={render:(source,options)=>{if(options.links!==false||options.images!==false)throw new Error('unsafe options');if(source.includes('broken'))throw new Error('<script>bad diagram</script>');return {svg:'<svg xmlns="http://www.w3.org/2000/svg"><script>window.pwned=true</script><a href="https://example.test"><text>Flow preview</text></a></svg>'};}};`}));
+}
 test.afterEach(async({page})=>{expect(page.appErrors||[]).toEqual([]);});
 async function boot(page,{showHome=false}={}){const errors=[];page.appErrors=errors;page.on('pageerror',e=>{errors.push(e.message);console.log('PAGE ERROR:',e.stack);});await page.goto('/');await expect(page.locator('#home')).toBeVisible();if(!showHome){await page.locator('#homeRouteLocal').click();if(await page.locator('#homeContinue').isEnabled())await page.locator('#homeContinue').click();await expect(page.locator('#btnAdd')).toBeVisible();}return errors;}
 async function openBoard(page,name='Board A'){await page.locator('#btnDrive').click();await expect(page.locator('.drv-board-name').first()).toBeVisible();await page.locator('.drv-board-name').filter({hasText:name}).click();await expect(page.locator('#boardName')).toHaveText('· '+name);}
@@ -41,6 +44,31 @@ test('sanitizer removes active content but preserves supported formatting',async
   await mockDrive(page);await boot(page);
   const result=await page.evaluate(()=>JuiceCore.sanitize('<b onclick="alert(1)">bold</b><img src=x onerror="alert(1)"><svg onload="alert(1)"></svg><a href="javascript:alert(1)">bad</a><span style="color:red;background-image:url(https://evil.test)">red</span><a href="https://example.com">good</a>'));
   expect(result).toContain('<b>bold</b>');expect(result).not.toMatch(/onclick|onerror|onload|javascript:|<img|<svg|background-image/);expect(result).toContain('noopener noreferrer');expect(result).toContain('color: red');
+});
+test('Pele flow card creates, edits, copies, restores and reloads safely',async({page})=>{
+  await mockDrive(page);await mockPele(page);await boot(page);
+  await page.locator('#btnFlow').click();await expect(page.locator('.pele-source')).toHaveValue(/flowchart LR/);await expect(page.locator('.pele-preview svg')).toBeVisible();
+  await expect(page.locator('.pele-preview script')).toHaveCount(0);await expect(page.locator('.pele-preview a')).toHaveCount(0);
+  await page.locator('.pele-source').fill('flowchart TD\nStart --> Finish');await page.waitForTimeout(500);
+  let data=await stored(page);expect(data.schemaVersion).toBe(3);expect(data.cards[0].blocks[0]).toMatchObject({type:'diagram',html:'flowchart TD\nStart --&gt; Finish'});
+  await page.locator('#addBlk').click();await page.locator('.bmenu').getByText('流程圖',{exact:true}).click();await expect(page.locator('.pele-source')).toHaveCount(2);
+  await page.locator('#pClose').click();await page.locator('.card').click();await page.locator('#btnDuplicate').click();await expect(page.locator('.card')).toHaveCount(2);
+  await page.waitForTimeout(500);data=await stored(page);expect(data.cards[1].blocks[0].type).toBe('diagram');await page.locator('#btnUndo').click();await expect(page.locator('.card')).toHaveCount(1);await page.locator('#btnRedo').click();await expect(page.locator('.card')).toHaveCount(2);
+  await page.waitForTimeout(500);await page.reload();await page.locator('#homeRouteLocal').click();await page.locator('#homeContinue').click();await expect(page.locator('.card')).toHaveCount(2);await expect(page.locator('.pvdiagram svg')).toHaveCount(4);
+});
+test('diagram blocks survive JSON import, legacy normalization and Drive round trips',async({page})=>{
+  const api=await mockDrive(page);await mockPele(page);await boot(page);
+  const imported={schemaVersion:3,cards:[{id:'flow',x:30,y:40,title:'Imported flow',blocks:[{id:'diagram-block',type:'diagram',html:'flowchart LR\nA --&gt; B'}],tags:[]}],links:[],groups:[],images:[],view:{x:0,y:0,zoom:1}};
+  await page.locator('#fileInput').setInputFiles({name:'flow.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(imported))});await expect(page.locator('.ctitle')).toHaveText('Imported flow');
+  expect((await stored(page)).cards[0].blocks[0]).toMatchObject({type:'diagram',html:'flowchart LR\nA --&gt; B'});
+  const legacy=await page.evaluate(()=>JuiceCore.normalize({cards:[{id:'old-flow',title:'Old flow',blocks:[{id:'old-block',type:'diagram',html:'flowchart LR\\nA --&gt; B'}]}],links:[],groups:[],images:[],view:{}}));expect(legacy.schemaVersion).toBe(3);expect(legacy.cards[0].blocks[0].type).toBe('diagram');
+  await page.locator('#btnDrive').click();await page.locator('.drv-board-name').filter({hasText:'Board A'}).click();await page.locator('#btnFlow').click();await page.locator('.pele-source').fill('flowchart LR\nCloud --> Saved');await page.waitForTimeout(500);await page.locator('#btnSaveNow').click();await expect(page.locator('#saveStatus')).toHaveText('剛剛儲存');
+  expect(JSON.parse(api.files.a).cards.at(-1).blocks[0]).toMatchObject({type:'diagram',html:'flowchart LR\nCloud --&gt; Saved'});
+});
+test('Pele flow card remains usable at mobile width',async({page})=>{
+  await mockDrive(page);await mockPele(page);await page.setViewportSize({width:390,height:700});await boot(page);
+  await page.locator('#mobileMore').click();await page.locator('#btnFlow').click();await expect(page.locator('.pele-source')).toBeVisible();await expect(page.locator('.pele-preview svg')).toBeVisible();
+  expect(await page.locator('#panel').evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
 });
 test('invalid JSON import preserves existing board and source',async({page})=>{
   await mockDrive(page);await boot(page);await openBoard(page);await page.locator('#fileInput').setInputFiles({name:'bad.json',mimeType:'application/json',buffer:Buffer.from('{"cards":"invalid"}')});await expect(page.locator('#banner')).toContainText('cards');await expect(page.locator('#boardName')).toHaveText('· Board A');await expect(page.locator('.ctitle')).toHaveText('Remote A');
