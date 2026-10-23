@@ -61,8 +61,14 @@ test('flow studio, flow card sizing and layered icons persist safely',async({pag
   await page.locator('#btnFlow').click();await expect(page.locator('.card')).toHaveCSS('width','480px');
   await page.locator('.flow-tools').getByText('小',{exact:true}).click();await expect(page.locator('.card')).toHaveCSS('width','360px');
   await page.locator('.flow-studio-open').click();await expect(page.locator('#flowStudio')).toHaveClass(/open/);await expect(page.locator('.flow-studio-preview svg')).toBeVisible();await page.locator('#flowStudio header button').click();await expect(page.locator('#flowStudio')).not.toHaveClass(/open/);
+  await page.locator('.flow-studio-open').click();page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'圖形拖拉工具',exact:true}).click();await expect(page.locator('.fb-node')).toHaveCount(4);await page.locator('[data-add="rect"]').click();await expect(page.locator('.fb-node')).toHaveCount(5);await page.locator('#flowStudio header button').click();
   await page.locator('#btnIcon').click();await page.locator('#iconPalette').getByTitle('warning').click();await expect(page.locator('.iconobj')).toHaveCount(1);await page.locator('#iconLayer').selectOption('below');await page.waitForTimeout(500);
   const data=await stored(page);expect(data.cards[0].w).toBe(360);expect(data.icons[0]).toMatchObject({name:'warning',layer:'below',size:44});
+});
+test('free-position text persists with its appearance and layer',async({page})=>{
+  await mockDrive(page);await boot(page);await page.locator('#btnText').click();await expect(page.locator('.noteobj')).toHaveText('輸入文字');
+  await page.locator('.noteobj').fill('白板標註');await page.locator('#noteSize').fill('28');await page.locator('#noteColor').fill('#c5403b');await page.locator('#noteLayer').selectOption('below');await page.waitForTimeout(500);
+  expect((await stored(page)).notes[0]).toMatchObject({text:'白板標註',size:28,color:'#c5403b',layer:'below'});
 });
 test('diagram blocks survive JSON import, legacy normalization and Drive round trips',async({page})=>{
   const api=await mockDrive(page);await mockPele(page);await boot(page);

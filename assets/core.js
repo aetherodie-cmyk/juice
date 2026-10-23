@@ -61,8 +61,9 @@ window.JuiceCore = (() => {
     const groups=unique(array(d.groups).map(g=>{assert(object(g));return{id:id(g.id),x:num(g.x),y:num(g.y),w:num(g.w,240,1),h:num(g.h,160,1),title:text(g.title,10000)||'群組'};}));
     const images=unique(array(d.images,1000).map(i=>{assert(object(i));return{id:id(i.id),x:num(i.x),y:num(i.y),w:num(i.w,600,1),src:safeImage(i.src),opacity:num(i.opacity,0.55,0,1)};}));
     const icons=unique(array(d.icons,1000).map(i=>{assert(object(i));return{id:id(i.id),x:num(i.x),y:num(i.y),name:ICONS.has(i.name)?i.name:'idea',size:num(i.size,44,18,160),layer:i.layer==='below'?'below':'above'};}));
+    const notes=unique(array(d.notes,1000).map(n=>{assert(object(n));return{id:id(n.id),x:num(n.x),y:num(n.y),text:text(n.text,10000),size:num(n.size,20,12,72),color:/^#[0-9a-f]{6}$/i.test(n.color||'')?n.color:'#2A3038',layer:n.layer==='below'?'below':'above'};}));
     const v=d.view||{};assert(object(v));
-    return {schemaVersion:3,boardId:id(d.boardId),cards,links,groups,images,icons,view:{x:num(v.x),y:num(v.y),zoom:num(v.zoom,1,0.3,2.5)},savedAt:num(d.savedAt,0,0,1e15)};
+    return {schemaVersion:3,boardId:id(d.boardId),cards,links,groups,images,icons,notes,view:{x:num(v.x),y:num(v.y),zoom:num(v.zoom,1,0.3,2.5)},savedAt:num(d.savedAt,0,0,1e15)};
   }
   function parse(raw){assert(typeof raw==='string' && new Blob([raw]).size<=MAX_BYTES, '檔案超過 20 MB 限制');return JSON.parse(raw);}
   function inbox(raw){
