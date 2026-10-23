@@ -4,6 +4,7 @@ window.JuiceCore = (() => {
   const MAX_BYTES = 20 * 1024 * 1024;
   const TYPES = new Set('text h1 h2 h3 bullet number todo quote callout code divider image diagram'.split(' '));
   const COLORS = new Set('paper amber sage blue rose lavender grey'.split(' '));
+  const ICONS = new Set('person team database document warning check arrow phone mail ai calendar flag idea gear'.split(' '));
   const uid = () => crypto.randomUUID();
   const object = x => x && typeof x === 'object' && !Array.isArray(x);
   function assert(ok, message = '資料格式不正確'){if(!ok)throw new Error(message);}
@@ -48,6 +49,7 @@ window.JuiceCore = (() => {
     else if(c.text){const lines=text(c.text).split('\n');title=title||(lines.shift()||'').slice(0,120);blocks=lines.filter(line=>line.trim()).map(line=>{const el=document.createElement('div');el.textContent=line;return block({html:el.innerHTML});});}
     if(!blocks || !blocks.length)blocks=[block({})];
     const result={id:id(c.id),x:num(c.x),y:num(c.y),color:COLORS.has(c.color)?c.color:'paper',shape:['note','rect','pill'].includes(c.shape)?c.shape:'note',title,blocks,tags:array(c.tags,100).map(t=>text(t,200)),collapsed:!!c.collapsed,createdAt:num(c.createdAt,Date.now(),0,1e15),updatedAt:num(c.updatedAt,c.createdAt||Date.now(),0,1e15)};
+    if(c.w != null)result.w=num(c.w,240,180,960);
     if(c.sourceInbox)result.sourceInbox=text(c.sourceInbox,300);
     return result;
   }
@@ -58,8 +60,9 @@ window.JuiceCore = (() => {
     const links=unique(array(d.links,30000).map(l=>{assert(object(l));assert(ids.has(l.from)&&ids.has(l.to), '連線指向不存在的卡片');return {id:id(l.id),from:l.from,to:l.to,dir:['none','to','both'].includes(l.dir)?l.dir:'none',label:text(l.label,10000)};}));
     const groups=unique(array(d.groups).map(g=>{assert(object(g));return{id:id(g.id),x:num(g.x),y:num(g.y),w:num(g.w,240,1),h:num(g.h,160,1),title:text(g.title,10000)||'群組'};}));
     const images=unique(array(d.images,1000).map(i=>{assert(object(i));return{id:id(i.id),x:num(i.x),y:num(i.y),w:num(i.w,600,1),src:safeImage(i.src),opacity:num(i.opacity,0.55,0,1)};}));
+    const icons=unique(array(d.icons,1000).map(i=>{assert(object(i));return{id:id(i.id),x:num(i.x),y:num(i.y),name:ICONS.has(i.name)?i.name:'idea',size:num(i.size,44,18,160),layer:i.layer==='below'?'below':'above'};}));
     const v=d.view||{};assert(object(v));
-    return {schemaVersion:3,boardId:id(d.boardId),cards,links,groups,images,view:{x:num(v.x),y:num(v.y),zoom:num(v.zoom,1,0.3,2.5)},savedAt:num(d.savedAt,0,0,1e15)};
+    return {schemaVersion:3,boardId:id(d.boardId),cards,links,groups,images,icons,view:{x:num(v.x),y:num(v.y),zoom:num(v.zoom,1,0.3,2.5)},savedAt:num(d.savedAt,0,0,1e15)};
   }
   function parse(raw){assert(typeof raw==='string' && new Blob([raw]).size<=MAX_BYTES, '檔案超過 20 MB 限制');return JSON.parse(raw);}
   function inbox(raw){

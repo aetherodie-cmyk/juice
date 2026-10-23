@@ -56,6 +56,14 @@ test('Pele flow card creates, edits, copies, restores and reloads safely',async(
   await page.waitForTimeout(500);data=await stored(page);expect(data.cards[1].blocks[0].type).toBe('diagram');await page.locator('#btnUndo').click();await expect(page.locator('.card')).toHaveCount(1);await page.locator('#btnRedo').click();await expect(page.locator('.card')).toHaveCount(2);
   await page.waitForTimeout(500);await page.reload();await page.locator('#homeRouteLocal').click();await page.locator('#homeContinue').click();await expect(page.locator('.card')).toHaveCount(2);await expect(page.locator('.pvdiagram svg')).toHaveCount(4);
 });
+test('flow studio, flow card sizing and layered icons persist safely',async({page})=>{
+  await mockDrive(page);await mockPele(page);await boot(page);
+  await page.locator('#btnFlow').click();await expect(page.locator('.card')).toHaveCSS('width','480px');
+  await page.locator('.flow-tools').getByText('小',{exact:true}).click();await expect(page.locator('.card')).toHaveCSS('width','360px');
+  await page.locator('.flow-studio-open').click();await expect(page.locator('#flowStudio')).toHaveClass(/open/);await expect(page.locator('.flow-studio-preview svg')).toBeVisible();await page.locator('#flowStudio header button').click();await expect(page.locator('#flowStudio')).not.toHaveClass(/open/);
+  await page.locator('#btnIcon').click();await page.locator('#iconPalette').getByTitle('warning').click();await expect(page.locator('.iconobj')).toHaveCount(1);await page.locator('#iconLayer').selectOption('below');await page.waitForTimeout(500);
+  const data=await stored(page);expect(data.cards[0].w).toBe(360);expect(data.icons[0]).toMatchObject({name:'warning',layer:'below',size:44});
+});
 test('diagram blocks survive JSON import, legacy normalization and Drive round trips',async({page})=>{
   const api=await mockDrive(page);await mockPele(page);await boot(page);
   const imported={schemaVersion:3,cards:[{id:'flow',x:30,y:40,title:'Imported flow',blocks:[{id:'diagram-block',type:'diagram',html:'flowchart LR\nA --&gt; B'}],tags:[]}],links:[],groups:[],images:[],view:{x:0,y:0,zoom:1}};
