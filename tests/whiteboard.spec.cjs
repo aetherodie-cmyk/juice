@@ -40,6 +40,19 @@ async function editTitle(page,title){await page.locator('.card').first().dblclic
 async function stored(page){return page.evaluate(()=>JSON.parse(localStorage.getItem('sju-whiteboard-v2')));}
 async function clickTool(page,id){const button=page.locator('#'+id);if(!await button.isVisible())await page.locator('#btnToolsMore').click();await button.click();}
 
+test('more tools keeps concise labels inside bordered menu cells',async({page})=>{
+  await mockDrive(page);await boot(page);await page.locator('#btnToolsMore').click();
+  const panel=page.locator('#toolbarMorePanel'),image=page.locator('#btnImg');
+  await expect(panel).toBeVisible();await expect(image).toHaveAttribute('data-tip','插入圖片');
+  await expect(image).toHaveAttribute('title',/Ctrl\+V/);
+  const layout=await panel.evaluate(el=>{
+    const buttons=[...el.querySelectorAll('button.tb')].filter(button=>getComputedStyle(button).display!=='none');
+    return {overflow:el.scrollWidth>el.clientWidth,unbordered:buttons.some(button=>getComputedStyle(button).borderTopWidth==='0px'),imageLabel:getComputedStyle(el.querySelector('#btnImg'),'::before').content};
+  });
+  expect(layout).toEqual({overflow:false,unbordered:false,imageLabel:'"插入圖片"'});
+  await panel.screenshot({path:'/tmp/juice-toolbar-menu.png',animations:'disabled'});
+});
+
 test('create, edit, reload and legacy entry share the same app',async({page})=>{
   await mockDrive(page);const errors=await boot(page);await page.locator('#btnAdd').click();await page.locator('#pTitle').fill('Local board');await page.locator('#pClose').click();await page.waitForTimeout(500);
   expect((await stored(page)).cards[0].title).toBe('Local board');await page.goto('/whiteboard.html');await expect(page).toHaveURL(/index.html/);await page.locator('#homeRouteLocal').click();await page.locator('#homeContinue').click();await expect(page.locator('.ctitle')).toHaveText('Local board');expect(errors).toEqual([]);

@@ -73,7 +73,7 @@
   $('btnAdd').before(mobileAddAnchor);$('btnSelect').before(mobileSelectAnchor);
   const mobileAddLabel=document.createElement('span');mobileAddLabel.className='mobile-action-label';mobileAddLabel.textContent='新增';$('btnAdd').append(mobileAddLabel);
   $('toolbarActions').querySelectorAll('button[data-tip]').forEach(button=>{
-    button.title=button.dataset.tip;
+    button.title=button.title||button.dataset.tip;
     if(!button.textContent.trim()){const label=document.createElement('span');label.className='mobile-action-label';label.textContent=button.dataset.tip;button.append(label);}
   });
   function setToolbarMore(open){
