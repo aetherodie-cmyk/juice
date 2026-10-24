@@ -41,7 +41,7 @@ window.JuiceCore = (() => {
     };
     clean(template.content);return template.innerHTML;
   }
-  function block(b){assert(object(b));const result={id:id(b.id),type:TYPES.has(b.type)?b.type:'text',html:sanitize(text(b.html)),checked:!!b.checked,src:safeImage(b.src)};if(result.type==='diagram'&&b.diagramPositions)result.diagramPositions=text(b.diagramPositions,200000);return result;}
+  function block(b){assert(object(b));const result={id:id(b.id),type:TYPES.has(b.type)?b.type:'text',html:sanitize(text(b.html)),checked:!!b.checked,src:safeImage(b.src)};if(result.type==='diagram'){if(b.diagramPositions)result.diagramPositions=text(b.diagramPositions,200000);if(b.aiContext)result.aiContext=text(b.aiContext,50000);}return result;}
   function card(c, legacy){
     assert(object(c));let blocks,title=text(c.title,10000);
     if(c.blocks != null)blocks=unique(array(c.blocks,5000).map(block));

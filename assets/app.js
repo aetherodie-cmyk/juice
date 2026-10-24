@@ -775,6 +775,13 @@
     root.querySelector('.studio-settings')?.remove();root.querySelector('.flow-builder')?.remove();root.classList.remove('visual-mode');
     const settings=document.createElement('div');settings.className='studio-settings';
     const title=document.createElement('input');title.value=c.title;title.setAttribute('aria-label','流程圖名稱');title.oninput=()=>{c.title=title.value;renderTile(c);touch(c);scheduleSave();};settings.appendChild(title);
+    const aiPrompt=document.createElement('button');aiPrompt.textContent='讓 AI 幫我整理';aiPrompt.type='button';aiPrompt.onclick=()=>window.JuiceFlowAI.openPrompt(c.title,source.value+(b.aiContext?'\n討論紀錄：'+b.aiContext:''));settings.appendChild(aiPrompt);
+    const aiImport=document.createElement('button');aiImport.textContent='貼上 AI 結果';aiImport.type='button';aiImport.onclick=()=>window.JuiceFlowAI.openImport(async(data,update)=>{
+      if(update&&!state.cards.some(card=>card.id===c.id&&card.blocks.some(block=>block.id===b.id)))throw new Error('目前流程已不存在，請選擇新增流程圖');
+      await Core.backup(structuredClone(state),'套用 AI 流程前');let target=c,block=b;
+      if(!update){const r=canvas.getBoundingClientRect(),point=screenToWorld(r.left+r.width/2,r.top+r.height/2);target=addCard(point.x+80,point.y+80);target.w=480;block=mkBlock('diagram','');target.blocks=[block];closePanel();}
+      target.title=data.title;block.html=escapeHtml(data.mermaid);block.diagramPositions='';block.aiContext=JSON.stringify({questions:data.questions,assumptions:data.assumptions});touch(target);renderTile(target);refreshLinksFor(target.id);scheduleSave();openFlowStudio(target,block);showBanner(update?'已更新流程，原版可從復原備份取回':'已新增 AI 流程圖');
+    });settings.appendChild(aiImport);
     let fromGraph=false,graphTimer;const mountGraph=()=>{const host=root.querySelector('.flow-builder');if(host)window.JuiceFlowBuilder.mount(host,source,()=>{fromGraph=true;source.oninput();fromGraph=false;});};
     if(source.graphListener)source.removeEventListener('input',source.graphListener);source.graphListener=()=>{if(fromGraph||!root.classList.contains('visual-mode'))return;clearTimeout(graphTimer);graphTimer=setTimeout(mountGraph,500);};source.addEventListener('input',source.graphListener);
     const visual=document.createElement('button');visual.textContent='圖形拖拉工具';visual.type='button';visual.onclick=()=>{if(root.classList.contains('visual-mode'))return;root.querySelector('.flow-builder')?.remove();const host=document.createElement('div');host.className='flow-builder';root.querySelector('main').appendChild(host);mountGraph();root.classList.add('visual-mode');};settings.appendChild(visual);
