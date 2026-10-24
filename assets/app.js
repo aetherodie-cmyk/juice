@@ -563,7 +563,7 @@
 
   function renderBlocks(c,focusId){const box=$('pBlocks');box.innerHTML='';let num=0;
     if(hasDiagram(c)){const tools=document.createElement('div');tools.className='flow-tools';tools.innerHTML='<span>流程圖大小</span>';
-      [[360,'小'],[480,'中'],[680,'大'],[0,'適合內容']].forEach(([width,label])=>{const button=document.createElement('button');button.type='button';button.textContent=label;button.addEventListener('click',()=>{c.w=width||480;placeCard(c);refreshLinksFor(c.id);touch(c);scheduleSave('size:'+c.id);});tools.appendChild(button);});box.appendChild(tools);}
+      [[360,'小'],[480,'中'],[680,'大'],[900,'特大'],[0,'適合內容']].forEach(([width,label])=>{const button=document.createElement('button');button.type='button';button.textContent=label;button.addEventListener('click',()=>{const svg=cardEls.get(c.id)?.querySelector('.pvdiagram svg'),natural=svg?.viewBox?.baseVal?.width||900;c.w=width||Math.max(360,Math.min(1200,Math.ceil(natural+40)));placeCard(c);refreshLinksFor(c.id);touch(c);scheduleSave('size:'+c.id);});tools.appendChild(button);});box.appendChild(tools);}
     c.blocks.forEach((b,i)=>{if(b.type==='number')num++;else num=0;box.appendChild(makeBlockEl(c,b,i,num));});
     if(focusId){const el=box.querySelector('.blk[data-id="'+focusId+'"] .ed');if(el)placeCaretEnd(el);}}
 
@@ -747,7 +747,7 @@
 
   let cardResize=null;
   function onCardResize(e,c){if(!hasDiagram(c))return;e.stopPropagation();e.preventDefault();const start=screenToWorld(e.clientX,e.clientY),el=cardEls.get(c.id);cardResize={c,start,w:el.offsetWidth};e.currentTarget.setPointerCapture(e.pointerId);window.addEventListener('pointermove',onCardResizeMove);window.addEventListener('pointerup',onCardResizeUp);}
-  function onCardResizeMove(e){if(!cardResize)return;const p=screenToWorld(e.clientX,e.clientY);cardResize.c.w=Math.max(280,Math.min(900,Math.round(cardResize.w+p.x-cardResize.start.x)));placeCard(cardResize.c);refreshLinksFor(cardResize.c.id);}
+  function onCardResizeMove(e){if(!cardResize)return;const p=screenToWorld(e.clientX,e.clientY);cardResize.c.w=Math.max(280,Math.min(1200,Math.round(cardResize.w+p.x-cardResize.start.x)));placeCard(cardResize.c);refreshLinksFor(cardResize.c.id);}
   function onCardResizeUp(){window.removeEventListener('pointermove',onCardResizeMove);window.removeEventListener('pointerup',onCardResizeUp);if(cardResize){touch(cardResize.c);scheduleSave('size:'+cardResize.c.id);}cardResize=null;}
 
   // ---------- pointer: link handle ----------
@@ -787,6 +787,7 @@
     document.body.appendChild(root);root.querySelector('header button').addEventListener('click',()=>closeFlowStudio());root.addEventListener('pointerdown',e=>{if(e.target===root)closeFlowStudio();});document.addEventListener('keydown',e=>{if(e.key==='Escape'&&root.classList.contains('open')){e.preventDefault();closeFlowStudio();}});flowStudio=root;return root;}
   function closeFlowStudio(){if(!flowStudio)return;flowStudio.classList.remove('open');document.body.classList.remove('flow-studio-open');}
   function openFlowStudio(c,b){const root=ensureFlowStudio(),source=root.querySelector('textarea'),preview=root.querySelector('.flow-studio-preview'),divider=root.querySelector('.flow-studio-divider');const decoded=window.JuicePeleFlow.decode(b.html||'');source.flowPositions=b.diagramPositions||decoded.match(/%% juice-positions (.*)/)?.[1]||'';source.value=decoded.replace(/^%% juice-positions .*$/gm,'').trim();const repaint=()=>window.JuicePeleFlow.draw(preview,source.value);repaint();
+    if(/^\s*subgraph\s/m.test(source.value)&&(c.w||480)===480){c.w=900;placeCard(c);refreshLinksFor(c.id);touch(c);scheduleSave('size:'+c.id);}
     root.querySelector('.studio-settings')?.remove();root.querySelector('.flow-builder')?.remove();root.classList.remove('visual-mode');
     const settings=document.createElement('div');settings.className='studio-settings';
     const title=document.createElement('input');title.value=c.title;title.setAttribute('aria-label','流程圖名稱');title.oninput=()=>{c.title=title.value;renderTile(c);touch(c);scheduleSave();};settings.appendChild(title);
@@ -794,7 +795,7 @@
     const aiImport=document.createElement('button');aiImport.textContent='貼上 AI 結果';aiImport.type='button';aiImport.onclick=()=>window.JuiceFlowAI.openImport(async(data,update)=>{
       if(update&&!state.cards.some(card=>card.id===c.id&&card.blocks.some(block=>block.id===b.id)))throw new Error('目前流程已不存在，請選擇新增流程圖');
       await Core.backup(structuredClone(state),'套用 AI 流程前');let target=c,block=b;
-      if(!update){const r=canvas.getBoundingClientRect(),point=screenToWorld(r.left+r.width/2,r.top+r.height/2);target=addCard(point.x+80,point.y+80);target.w=480;block=mkBlock('diagram','');target.blocks=[block];closePanel();}
+      if(!update){const r=canvas.getBoundingClientRect(),point=screenToWorld(r.left+r.width/2,r.top+r.height/2);target=addCard(point.x+80,point.y+80);target.w=data.lanes?.length?900:480;block=mkBlock('diagram','');target.blocks=[block];closePanel();}
       target.title=data.title;block.html=escapeHtml(data.mermaid);block.diagramPositions='';block.aiContext=JSON.stringify({questions:data.questions,assumptions:data.assumptions});touch(target);renderTile(target);refreshLinksFor(target.id);scheduleSave();openFlowStudio(target,block);showBanner(update?'已更新流程，原版可從復原備份取回':'已新增 AI 流程圖');
     });settings.appendChild(aiImport);
     let fromGraph=false,graphTimer;const mountGraph=()=>{const host=root.querySelector('.flow-builder');if(host)window.JuiceFlowBuilder.mount(host,source,()=>{fromGraph=true;source.oninput();fromGraph=false;});};
@@ -802,9 +803,9 @@
     const visual=document.createElement('button');visual.textContent='圖形拖拉工具';visual.type='button';visual.onclick=()=>{if(root.classList.contains('visual-mode'))return;root.querySelector('.flow-builder')?.remove();const host=document.createElement('div');host.className='flow-builder';root.querySelector('main').appendChild(host);mountGraph();root.classList.add('visual-mode');};settings.appendChild(visual);
     const autoPreview=document.createElement('button');autoPreview.textContent='Pele 排版預覽';autoPreview.onclick=()=>{root.classList.remove('visual-mode');repaint();};settings.appendChild(autoPreview);
     COLOR_KEYS.forEach(color=>{const button=document.createElement('button');button.type='button';button.className='studio-color';button.style.background=COLORS[color].bg;button.title='流程圖背景 '+color;button.onclick=()=>{c.color=color;applyCardColor(c);preview.style.background=COLORS[color].bg;touch(c);scheduleSave();};settings.appendChild(button);});preview.style.background=COLORS[c.color].bg;
-    const size=document.createElement('select');size.setAttribute('aria-label','流程圖寬度');[360,480,680,900].forEach(w=>{const option=new Option(w+' px',w);size.add(option);});size.value=c.w||480;size.onchange=()=>{c.w=Number(size.value);placeCard(c);refreshLinksFor(c.id);scheduleSave();};settings.appendChild(size);
+    const size=document.createElement('select');size.setAttribute('aria-label','流程圖寬度');[360,480,680,900,1200].forEach(w=>{const option=new Option(w+' px',w);size.add(option);});size.value=c.w||480;size.onchange=()=>{c.w=Number(size.value);placeCard(c);refreshLinksFor(c.id);scheduleSave();};settings.appendChild(size);
     const link=document.createElement('button');link.textContent='連到其他卡片';link.type='button';link.onclick=()=>{const candidates=state.cards.filter(other=>other.id!==c.id);const r=link.getBoundingClientRect();showMenu(candidates.map(other=>({label:cardLabel(other).text,onClick:()=>{if(!state.links.some(l=>l.from===c.id&&l.to===other.id)){const l={id:uid(),from:c.id,to:other.id,dir:'to',label:''};state.links.push(l);makeLinkEl(l);refreshLinks();scheduleSave();}}})),r.left,r.bottom,'選擇卡片');};settings.appendChild(link);root.querySelector('header').after(settings);
-    source.oninput=()=>{b.html=escapeHtml(source.value);b.diagramPositions=source.flowPositions||'';const inline=$('pBlocks').querySelector('.blk[data-id="'+b.id+'"] .pele-source');if(inline&&inline!==source)inline.value=source.value;touch(c);scheduleSave('block:'+c.id+':'+b.id);repaint();renderTile(c);refreshLinksFor(c.id);};
+    source.oninput=()=>{b.html=escapeHtml(source.value);b.diagramPositions=source.flowPositions||'';if(/^\s*subgraph\s/m.test(source.value)&&(c.w||480)===480){c.w=900;placeCard(c);size.value='900';}const inline=$('pBlocks').querySelector('.blk[data-id="'+b.id+'"] .pele-source');if(inline&&inline!==source)inline.value=source.value;touch(c);scheduleSave('block:'+c.id+':'+b.id);repaint();renderTile(c);refreshLinksFor(c.id);};
     let split=null;divider.onpointerdown=e=>{e.preventDefault();const main=root.querySelector('main'),rect=main.getBoundingClientRect();split={rect,start:e.clientX,pct:parseFloat(main.style.getPropertyValue('--flow-source'))||50};divider.setPointerCapture(e.pointerId);};divider.onpointermove=e=>{if(!split)return;const pct=Math.max(28,Math.min(72,split.pct+(e.clientX-split.start)/split.rect.width*100));root.querySelector('main').style.setProperty('--flow-source',pct+'%');};divider.onpointerup=()=>{split=null;};
     root.classList.add('open');document.body.classList.add('flow-studio-open');visual.click();}
   function moveMarquee(e){
