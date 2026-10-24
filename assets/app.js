@@ -13,7 +13,7 @@
   const VALID_TYPES=new Set(BLOCK_TYPES.map(b=>b.t));
   const PLACE={text:'輸入文字…',h1:'標題',h2:'標題',h3:'標題',bullet:'清單項目',number:'清單項目',todo:'待辦事項',quote:'引言',callout:'重點',code:'程式碼'};
 
-  let state={cards:[],links:[],groups:[],images:[],icons:[],notes:[],view:{x:0,y:0,zoom:1}};
+  let state={cards:[],links:[],groups:[],images:[],icons:[],iconLibrary:[],notes:[],view:{x:0,y:0,zoom:1}};
   let selection=new Set(), extraSelection=new Set(), selectedGroup=null, openCardId=null, storageOK=true;
 
   const $=id=>document.getElementById(id);
@@ -272,7 +272,7 @@
   // Session history tracks board content, not viewport or remote side effects.
   const HISTORY_LIMIT=50,HISTORY_BYTES=16*1024*1024;
   let historyPast=[],historyFuture=[],historyHead='',historyRestoring=false;
-  const historyContent=()=>JSON.stringify({cards:state.cards,links:state.links,groups:state.groups,images:state.images,icons:state.icons,notes:state.notes});
+  const historyContent=()=>JSON.stringify({cards:state.cards,links:state.links,groups:state.groups,images:state.images,icons:state.icons,iconLibrary:state.iconLibrary,notes:state.notes});
   function updateHistoryButtons(){$('btnUndo').disabled=!historyPast.length||loadFailed;$('btnRedo').disabled=!historyFuture.length||loadFailed;}
   function resetHistory(){historyPast=[];historyFuture=[];historyHead=historyContent();updateHistoryButtons();}
   function captureHistory(key=null){
@@ -1103,14 +1103,24 @@
   function deleteIcon(id){state.icons=state.icons.filter(icon=>icon.id!==id);iconEls.get(id)?.remove();iconEls.delete(id);extraSelection.delete(objectKey('icon',id));removeMemberFromGroups('icon',id);if(selectedIcon===id)selectedIcon=null;hideIconbar();scheduleSave();}
   function addIcon(data){const r=canvas.getBoundingClientRect(),p=screenToWorld(r.left+r.width/2,r.top+r.height/2);
     const icon={id:uid(),x:Math.round(p.x-22),y:Math.round(p.y-22),size:44,layer:'above',...data};state.icons.push(icon);makeIconEl(icon);selectIcon(icon.id);$('iconPalette').hidden=true;scheduleSave();}
+  function saveIconToLibrary(src,label){
+    if(state.iconLibrary.some(item=>item.src===src))return true;
+    if(!/^data:image\/(?:png|webp);base64,/.test(src)||src.length>1024*1024||state.iconLibrary.length>=30||state.iconLibrary.reduce((size,item)=>size+item.src.length,0)+src.length>6*1024*1024)return false;
+    state.iconLibrary.push({id:uid(),label:(label||'自訂圖示').slice(0,100),src});return true;
+  }
   function readCustomIconFile(file){if(!/^image\/(png|webp)$/.test(file.type)||file.size>2*1024*1024){showBanner('自訂圖示請使用 2 MB 內的 PNG 或 WebP');return;}
     const reader=new FileReader();reader.onerror=()=>showBanner('無法讀取圖示');reader.onload=()=>{const image=new Image();image.onerror=()=>showBanner('圖示格式無法讀取');image.onload=()=>{
       const scale=Math.min(1,256/Math.max(image.width,image.height)),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(image.width*scale));canvas.height=Math.max(1,Math.round(image.height*scale));
-      canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);const src=canvas.toDataURL('image/png');if(src.length>1024*1024){showBanner('圖示內容過大，請改用較簡單的圖片');return;}addIcon({name:'custom',src});};image.src=reader.result;};reader.readAsDataURL(file);}
+      canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);const src=canvas.toDataURL('image/png');if(src.length>1024*1024){showBanner('圖示內容過大，請改用較簡單的圖片');return;}
+      if(!saveIconToLibrary(src,file.name.replace(/\.[^.]+$/,'')||'自訂圖示'))showBanner('圖示已放入白板，但圖示庫容量已滿');addIcon({name:'custom',src});};image.src=reader.result;};reader.readAsDataURL(file);}
   function openIconPalette(){const palette=$('iconPalette');if(!palette.hidden){palette.hidden=true;return;}palette.replaceChildren();
     const search=document.createElement('input');search.type='search';search.placeholder='搜尋圖示';search.setAttribute('aria-label','搜尋圖示');palette.appendChild(search);
-    const buttons=[];Object.entries(ICONS).forEach(([name,glyph])=>{const button=document.createElement('button');button.type='button';button.textContent=glyph;button.title=name;button.dataset.search=(name+' '+(ICON_LABELS[name]||name)).toLowerCase();button.setAttribute('aria-label',ICON_LABELS[name]||name);button.addEventListener('click',()=>addIcon({name}));palette.appendChild(button);buttons.push(button);});
-    search.addEventListener('input',()=>{const query=search.value.trim().toLowerCase();buttons.forEach(button=>{button.hidden=!!query&&!button.dataset.search.includes(query);});});
+    const searchable=[];Object.entries(ICONS).forEach(([name,glyph])=>{const button=document.createElement('button');button.type='button';button.textContent=glyph;button.title=name;button.dataset.search=(name+' '+(ICON_LABELS[name]||name)).toLowerCase();button.setAttribute('aria-label',ICON_LABELS[name]||name);button.addEventListener('click',()=>addIcon({name}));palette.appendChild(button);searchable.push(button);});
+    const saved=new Set(state.iconLibrary.map(item=>item.src)),library=[...state.iconLibrary];state.icons.forEach(icon=>{if(icon.name==='custom'&&icon.src&&!saved.has(icon.src)){saved.add(icon.src);library.push({id:null,label:'自訂圖示 '+(library.length+1),src:icon.src});}});
+    if(library.length){const section=document.createElement('div');section.className='icon-library';const heading=document.createElement('strong');heading.textContent='我的圖示';section.appendChild(heading);
+      library.forEach(item=>{const tile=document.createElement('div');tile.className='icon-library-item';tile.dataset.search=item.label.toLowerCase();const button=document.createElement('button');button.type='button';button.title=item.label;button.setAttribute('aria-label','插入 '+item.label);const image=document.createElement('img');image.src=item.src;image.alt='';button.appendChild(image);button.addEventListener('click',()=>{if(!item.id&&!saveIconToLibrary(item.src,item.label))showBanner('圖示庫容量已滿，仍可使用白板上的圖示');addIcon({name:'custom',src:item.src});});tile.appendChild(button);
+        section.appendChild(tile);searchable.push(tile);});search.after(section);}
+    search.addEventListener('input',()=>{const query=search.value.trim().toLowerCase();searchable.forEach(item=>{item.hidden=!!query&&!item.dataset.search.includes(query);});});
     const custom=document.createElement('div');custom.className='icon-custom';const upload=document.createElement('button');upload.type='button';upload.textContent='上傳自訂 PNG／WebP 圖示';upload.addEventListener('click',()=>{const input=document.createElement('input');input.type='file';input.accept='image/png,image/webp';input.addEventListener('change',()=>{if(input.files[0])readCustomIconFile(input.files[0]);});input.click();});
     custom.append(upload);palette.appendChild(custom);palette.hidden=false;search.focus();}
   $('btnIcon').addEventListener('click',openIconPalette);

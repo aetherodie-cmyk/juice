@@ -221,9 +221,21 @@ test('uploaded transparent custom icon survives save and reload',async({page})=>
   await (await chooser).setFiles({name:'my-icon.png',mimeType:'image/png',buffer:Buffer.from(dataUrl.split(',')[1],'base64')});
   await expect(page.locator('.iconobj img')).toHaveCount(1);await page.waitForTimeout(500);
   const saved=await stored(page);expect(saved.icons[0]).toMatchObject({name:'custom',layer:'above'});expect(saved.icons[0].src).toMatch(/^data:image\/png;base64,/);
+  expect(saved.iconLibrary).toHaveLength(1);expect(saved.iconLibrary[0]).toMatchObject({label:'my-icon',src:saved.icons[0].src});
+  const libraryCheck=await page.evaluate(board=>{const roundTrip=JuiceCore.normalize(board).iconLibrary;let badSourceRejected=false;try{JuiceCore.normalize({...board,iconLibrary:[{id:'bad',src:'javascript:alert(1)'}]});}catch(e){badSourceRejected=true;}return{roundTrip,badSourceRejected};},saved);
+  expect(libraryCheck.roundTrip).toEqual(saved.iconLibrary);expect(libraryCheck.badSourceRejected).toBe(true);
   expect((await page.evaluate(icon=>JuiceCore.normalize({...JSON.parse(localStorage.getItem('sju-whiteboard-v2')),icons:[icon]}).icons[0],saved.icons[0])).src).toBe(saved.icons[0].src);
-  await page.reload();await page.locator('#homeRouteLocal').click();await page.locator('#homeContinue').click();await expect(page.locator('.iconobj img')).toHaveCount(1);
-  const alpha=await page.locator('.iconobj img').evaluate(async image=>{await image.decode();const canvas=document.createElement('canvas');canvas.width=2;canvas.height=2;canvas.getContext('2d').drawImage(image,0,0);return canvas.getContext('2d').getImageData(1,1,1,1).data[3];});expect(alpha).toBe(0);
+  await clickTool(page,'btnIcon');await expect(page.locator('#iconPalette').getByRole('button',{name:'插入 my-icon'})).toBeVisible();await page.locator('#iconPalette').getByRole('button',{name:'插入 my-icon'}).click();await expect(page.locator('.iconobj img')).toHaveCount(2);
+  await page.reload();await page.locator('#homeRouteLocal').click();await page.locator('#homeContinue').click();await expect(page.locator('.iconobj img')).toHaveCount(2);
+  await clickTool(page,'btnIcon');await expect(page.locator('#iconPalette').getByRole('button',{name:'插入 my-icon'})).toBeVisible();await page.screenshot({path:'/tmp/juice-custom-icons.png',animations:'disabled'});await page.locator('#iconPalette').getByRole('searchbox',{name:'搜尋圖示'}).fill('my-icon');await expect(page.locator('#iconPalette').getByRole('button',{name:'插入 my-icon'})).toBeVisible();
+  const alpha=await page.locator('.iconobj img').first().evaluate(async image=>{await image.decode();const canvas=document.createElement('canvas');canvas.width=2;canvas.height=2;canvas.getContext('2d').drawImage(image,0,0);return canvas.getContext('2d').getImageData(1,1,1,1).data[3];});expect(alpha).toBe(0);
+  await clickTool(page,'btnIcon');await page.locator('.iconobj').last().click();await page.locator('#iconDelete').click();await page.locator('.iconobj').click();await page.locator('#iconDelete').click();await expect(page.locator('.iconobj')).toHaveCount(0);
+  await clickTool(page,'btnIcon');await expect(page.locator('#iconPalette').getByRole('button',{name:'插入 my-icon'})).toBeVisible();
+});
+test('existing board custom icons appear in the icon picker and can be saved for reuse',async({page})=>{
+  await mockDrive(page);await page.addInitScript(()=>localStorage.setItem('sju-whiteboard-v2',JSON.stringify({cards:[],icons:[{id:'old-icon',x:100,y:100,name:'custom',size:44,layer:'above',src:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5Y2uEAAAAASUVORK5CYII='}]})));
+  await boot(page);await clickTool(page,'btnIcon');const tile=page.locator('#iconPalette').getByRole('button',{name:'插入 自訂圖示 1'});await expect(tile).toBeVisible();await tile.click();await expect(page.locator('.iconobj')).toHaveCount(2);
+  await page.waitForTimeout(450);const data=await stored(page);expect(data.iconLibrary).toHaveLength(1);expect(data.iconLibrary[0].src).toBe(data.icons[0].src);
 });
 test('free-position text persists with its appearance and layer',async({page})=>{
   await mockDrive(page);await boot(page);await clickTool(page,'btnText');await expect(page.locator('.noteobj')).toHaveText('輸入文字');
