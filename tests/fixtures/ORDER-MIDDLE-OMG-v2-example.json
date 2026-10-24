@@ -1,0 +1,33 @@
+{
+  "format": "juice-flow",
+  "version": 2,
+  "title": "上游至 OMG 接單與失敗通知流程",
+  "direction": "LR",
+  "lanes": [
+    {"id": "MIDDLE", "label": "中台"},
+    {"id": "OMG", "label": "OMG 接單模組"}
+  ],
+  "nodes": [
+    {"id": "START", "label": "上游系統完成付款與發票處理", "type": "round"},
+    {"id": "MIDDLE_RECEIVE", "label": "接收上游訂單與交易結果", "type": "rect", "lane": "MIDDLE"},
+    {"id": "MIDDLE_SEND", "label": "將訂單送往 OMG", "type": "rect", "lane": "MIDDLE"},
+    {"id": "MIDDLE_FAIL", "label": "收到 OMG 接單失敗通知", "type": "rect", "lane": "MIDDLE"},
+    {"id": "OMG_RECEIVE", "label": "接收中台訂單", "type": "rect", "lane": "OMG"},
+    {"id": "OMG_TRANSFORM", "label": "轉換訂單資料", "type": "rect", "lane": "OMG"},
+    {"id": "OMG_SAVE", "label": "寫入 OMG 訂單", "type": "rect", "lane": "OMG"},
+    {"id": "OMG_CHECK", "label": "接單及寫入是否成功", "type": "decision", "lane": "OMG"},
+    {"id": "OMG_DONE", "label": "OMG 訂單建立完成", "type": "round", "lane": "OMG"}
+  ],
+  "edges": [
+    {"from": "START", "to": "MIDDLE_RECEIVE", "label": "", "dotted": false},
+    {"from": "MIDDLE_RECEIVE", "to": "MIDDLE_SEND", "label": "", "dotted": false},
+    {"from": "MIDDLE_SEND", "to": "OMG_RECEIVE", "label": "", "dotted": false},
+    {"from": "OMG_RECEIVE", "to": "OMG_TRANSFORM", "label": "", "dotted": false},
+    {"from": "OMG_TRANSFORM", "to": "OMG_SAVE", "label": "", "dotted": false},
+    {"from": "OMG_SAVE", "to": "OMG_CHECK", "label": "", "dotted": false},
+    {"from": "OMG_CHECK", "to": "OMG_DONE", "label": "成功", "dotted": false},
+    {"from": "OMG_CHECK", "to": "MIDDLE_FAIL", "label": "失敗", "dotted": false}
+  ],
+  "questions": [],
+  "assumptions": []
+}
