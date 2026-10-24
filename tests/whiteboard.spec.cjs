@@ -65,6 +65,20 @@ test('flow studio, flow card sizing and layered icons persist safely',async({pag
   await page.locator('#btnIcon').click();await page.locator('#iconPalette').getByTitle('warning').click();await expect(page.locator('.iconobj')).toHaveCount(1);await page.locator('#iconLayer').selectOption('below');await page.waitForTimeout(500);
   const data=await stored(page);expect(data.cards[0].w).toBe(360);expect(data.icons[0]).toMatchObject({name:'warning',layer:'below',size:44});
 });
+test('expanded icon picker and clipboard screenshot paste save to the board',async({page,context})=>{
+  await mockDrive(page);await context.grantPermissions(['clipboard-read','clipboard-write']);await boot(page);
+  await page.locator('#btnIcon').click();const palette=page.locator('#iconPalette');
+  await expect(palette.getByRole('searchbox',{name:'搜尋圖示'})).toBeVisible();
+  await palette.getByRole('searchbox',{name:'搜尋圖示'}).fill('倉庫');
+  await expect(palette.getByTitle('warehouse')).toBeVisible();await expect(palette.getByTitle('warning')).toBeHidden();
+  await palette.getByTitle('warehouse').click();
+  await page.evaluate(async()=>{const canvas=document.createElement('canvas');canvas.width=2;canvas.height=2;canvas.getContext('2d').fillRect(0,0,2,2);
+    const png=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));
+    await navigator.clipboard.write([new ClipboardItem({'image/png':png})]);});
+  await page.locator('#canvas').click({position:{x:20,y:20}});await page.keyboard.press('Control+V');
+  await expect(page.locator('.imgobj')).toHaveCount(1);await page.waitForTimeout(500);
+  const data=await stored(page);expect(data.icons[0].name).toBe('warehouse');expect(data.images[0].src).toMatch(/^data:image\/jpeg;base64,/);
+});
 test('free-position text persists with its appearance and layer',async({page})=>{
   await mockDrive(page);await boot(page);await page.locator('#btnText').click();await expect(page.locator('.noteobj')).toHaveText('輸入文字');
   await page.locator('.noteobj').fill('白板標註');await page.locator('#noteSize').fill('28');await page.locator('#noteColor').fill('#c5403b');await page.locator('#noteLayer').selectOption('below');await page.waitForTimeout(500);
