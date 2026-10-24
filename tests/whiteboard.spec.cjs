@@ -105,12 +105,14 @@ test('Flow Plus creates a graph and persists structured node details across relo
   await expect(page.locator('#flowPlus')).toBeVisible();await expect(page.locator('.fp-node')).toHaveCount(4);await expect(page.locator('.fp-edges path[marker-end]')).toHaveCount(4);
   await page.locator('#flowPlus').screenshot({path:'/tmp/juice-flow-plus-overview.png'});
   await page.locator('.fp-node[data-node="B"]').click();await expect(page.locator('.fp-details')).toBeVisible();
+  await expect(page.locator('.fp-detail-body input,.fp-detail-body textarea')).toHaveCount(0);
+  await page.getByRole('button',{name:'編輯步驟'}).click();await page.locator('.fp-advanced summary').click();
   await page.getByRole('textbox',{name:'執行者'}).fill('客服');await page.getByRole('textbox',{name:'執行條件'}).fill('資料完整');await page.getByRole('textbox',{name:'輸出資料'}).fill('檢查結果');
-  await expect(page.locator('.fp-node[data-node="B"] .fp-condition')).toHaveText('條件：資料完整');
+  await expect(page.locator('.fp-node[data-node="B"] .fp-condition')).toHaveText('條件：通過／異常');
   await page.getByRole('button',{name:'關閉節點詳細資訊'}).click();await expect(page.locator('.fp-details')).toBeHidden();
   await page.getByRole('button',{name:'關閉 Flow Plus'}).click();await page.waitForTimeout(500);
   let data=await stored(page);const block=data.cards[0].blocks[0];expect(block.type).toBe('diagram');expect(block.html).toContain('B{資料檢查}');expect(JSON.parse(block.aiContext).flowPlus.nodes.B).toMatchObject({id:'B',name:'資料檢查',actor:'客服',conditions:'資料完整',outputs:'檢查結果'});
-  await page.reload();await page.locator('#homeRouteLocal').click();await page.locator('#homeContinue').click();await page.locator('.card').dblclick();await expect(page.locator('#flowPlus')).toBeVisible();await page.locator('.fp-node[data-node="B"]').click();await expect(page.getByRole('textbox',{name:'執行者'})).toHaveValue('客服');
+  await page.reload();await page.locator('#homeRouteLocal').click();await page.locator('#homeContinue').click();await page.locator('.card').dblclick();await expect(page.locator('#flowPlus')).toBeVisible();await page.locator('.fp-node[data-node="B"]').click();await expect(page.locator('.fp-detail-body')).toContainText('客服');await page.getByRole('button',{name:'編輯步驟'}).click();await page.locator('.fp-advanced summary').click();await expect(page.getByRole('textbox',{name:'執行者'})).toHaveValue('客服');
   data=await stored(page);expect(JSON.parse(data.cards[0].blocks[0].aiContext).flowPlus.nodes.B.outputs).toBe('檢查結果');
 });
 test('Flow Plus copy preserves Classic Mermaid and cross-lane links',async({page})=>{
@@ -118,9 +120,42 @@ test('Flow Plus copy preserves Classic Mermaid and cross-lane links',async({page
   const source=page.locator('#flowStudio textarea');await source.fill(omgMermaid);await expect(source).toHaveValue(/subgraph MIDDLE/);
   await page.getByRole('button',{name:'建立 Flow Plus 副本'}).click();await expect(page.locator('#flowPlus')).toBeVisible();await expect(page.locator('.fp-node')).toHaveCount(9);await expect(page.locator('.fp-lane')).toHaveCount(3);
   await expect(page.locator('.fp-edges path[marker-end]')).toHaveCount(8);await expect(page.locator('.fp-edges text')).toContainText(['成功','失敗']);
-  await page.locator('.fp-node[data-node="OMG_CHECK"]').click();await page.getByRole('textbox',{name:'待確認事項'}).fill('失敗通知由誰接收？');await page.getByRole('button',{name:'關閉 Flow Plus'}).click();await page.waitForTimeout(500);
+  await page.locator('.fp-node[data-node="OMG_CHECK"]').click();await page.getByRole('button',{name:'編輯步驟'}).click();await page.locator('.fp-advanced summary').click();await page.getByRole('textbox',{name:'待確認事項'}).fill('失敗通知由誰接收？');await page.getByRole('button',{name:'關閉 Flow Plus'}).click();await page.waitForTimeout(500);
   const data=await stored(page);expect(data.cards).toHaveLength(2);expect(data.cards[0].blocks[0].html).toBe(data.cards[1].blocks[0].html);expect(data.cards[0].blocks[0].aiContext).toBeUndefined();expect(JSON.parse(data.cards[1].blocks[0].aiContext).flowPlus.nodes.OMG_CHECK.questions).toBe('失敗通知由誰接收？');
   const models=await page.evaluate(()=>{const cards=JSON.parse(localStorage.getItem('sju-whiteboard-v2')).cards;return cards.map(card=>JuiceFlowBuilder.parse(JuicePeleFlow.decode(card.blocks[0].html)).edges.map(edge=>[edge.from,edge.to,edge.label]));});expect(models[0]).toEqual(models[1]);
+});
+test('Flow Plus reads graph facts, edits a short description and keeps node IDs and branches',async({page})=>{
+  await mockDrive(page);await mockPele(page);await boot(page);await page.locator('#btnFlow').click();await page.locator('.flow-studio-open').click();
+  await page.locator('#flowStudio textarea').fill(omgMermaid);await page.getByRole('button',{name:'建立 Flow Plus 副本'}).click();
+  await page.locator('.fp-node[data-node="OMG_CHECK"]').click();const body=page.locator('.fp-detail-body');
+  await expect(body).toContainText('OMG 接單模組');await expect(body).toContainText('OMG 訂單建立完成（成功）');await expect(body).toContainText('收到 OMG 接單失敗通知（失敗）');
+  await expect(body).not.toContainText('待補充');await expect(body.locator('input,textarea')).toHaveCount(0);await expect(body.getByRole('button',{name:/AI/})).toHaveCount(0);
+  await page.locator('#flowPlus').screenshot({path:'/tmp/juice-flow-plus-reading.png'});
+  await body.getByRole('button',{name:'編輯步驟'}).click();await expect(page.getByRole('textbox',{name:'步驟名稱'})).toHaveValue('接單及寫入是否成功');
+  await expect(page.getByRole('textbox',{name:'作業說明'})).toBeVisible();await expect(page.getByRole('textbox',{name:'執行者'})).toBeHidden();
+  await page.getByRole('textbox',{name:'步驟名稱'}).fill('確認 OMG 訂單建立結果');
+  await page.getByRole('textbox',{name:'作業說明'}).fill('依 OMG 回傳結果判斷是否完成接單。');
+  await body.getByRole('button',{name:'完成編輯'}).click();await expect(body).toContainText('依 OMG 回傳結果判斷是否完成接單。');
+  await page.waitForTimeout(450);const data=await stored(page),classic=data.cards[0].blocks[0],plus=data.cards[1].blocks[0],detail=JSON.parse(plus.aiContext).flowPlus.nodes.OMG_CHECK;
+  expect(classic.html).toContain('OMG_CHECK{接單及寫入是否成功}');
+  expect(plus.html).toContain('OMG_CHECK{確認 OMG 訂單建立結果}');
+  expect(detail).toMatchObject({id:'OMG_CHECK',name:'確認 OMG 訂單建立結果',notes:'依 OMG 回傳結果判斷是否完成接單。',conditions:''});
+  const edges=await page.evaluate(()=>{const cards=JSON.parse(localStorage.getItem('sju-whiteboard-v2')).cards;return cards.map(card=>JuiceFlowBuilder.parse(JuicePeleFlow.decode(card.blocks[0].html)).edges.map(edge=>[edge.from,edge.to,edge.label]));});expect(edges[1]).toEqual(edges[0]);
+  await page.getByRole('button',{name:'關閉 Flow Plus'}).click();await page.reload();await page.locator('#homeRouteLocal').click();await page.locator('#homeContinue').click();
+  await page.locator('.flowpluscard').dblclick();await page.locator('.fp-node[data-node="OMG_CHECK"]').click();await expect(page.locator('.fp-detail-body')).toContainText('依 OMG 回傳結果判斷是否完成接單。');
+});
+test('Flow Plus rejects invalid names and retains supported Mermaid comments',async({page})=>{
+  await mockDrive(page);await mockPele(page);await boot(page);await page.locator('#btnFlow').click();await page.locator('.flow-studio-open').click();
+  const source='flowchart LR\n%% 使用者註記\nA[接收資料]\nB[處理資料]\nA -->|完成| B';
+  await page.locator('#flowStudio textarea').fill(source);await page.getByRole('button',{name:'建立 Flow Plus 副本'}).click();
+  await page.locator('.fp-node[data-node="A"]').click();await page.getByRole('button',{name:'編輯步驟'}).click();
+  await page.getByRole('textbox',{name:'步驟名稱'}).fill('錯[誤]');await page.getByRole('button',{name:'完成編輯'}).click();
+  await expect(page.locator('.fp-node[data-node="A"] strong')).toHaveText('接收資料');
+  await page.getByRole('button',{name:'編輯步驟'}).click();await page.getByRole('textbox',{name:'步驟名稱'}).fill('取得資料');await page.getByRole('button',{name:'完成編輯'}).click();
+  await page.waitForTimeout(450);const data=await stored(page);
+  expect(data.cards[0].blocks[0].html).toContain('A[接收資料]');expect(data.cards[1].blocks[0].html).toContain('A[取得資料]');
+  expect(data.cards[1].blocks[0].html).toContain('%% 使用者註記');expect(data.cards[1].blocks[0].html).toContain('A --&gt; |完成| B');
+  expect(JSON.parse(data.cards[1].blocks[0].aiContext).flowPlus.nodes.A.name).toBe('取得資料');
 });
 test('Flow Plus refuses unsupported Mermaid conversion without changing Classic',async({page})=>{
   await mockDrive(page);await mockPele(page);await boot(page);await page.locator('#btnFlow').click();await page.locator('.flow-studio-open').click();const source=page.locator('#flowStudio textarea');
@@ -129,7 +164,7 @@ test('Flow Plus refuses unsupported Mermaid conversion without changing Classic'
 });
 test('Flow Plus details survive export, import, duplicate and history',async({page})=>{
   await mockDrive(page);await mockPele(page);await boot(page);await clickTool(page,'btnFlowPlus');
-  await page.locator('.fp-node[data-node="A"]').click();await page.getByRole('textbox',{name:'處理動作'}).fill('核對來源資料');
+  await page.locator('.fp-node[data-node="A"]').click();await page.getByRole('button',{name:'編輯步驟'}).click();await page.locator('.fp-advanced summary').click();await page.getByRole('textbox',{name:'處理動作'}).fill('核對來源資料');
   await page.getByRole('button',{name:'關閉 Flow Plus'}).click();await page.waitForTimeout(450);
   const downloadPromise=page.waitForEvent('download');await clickTool(page,'btnExport');const download=await downloadPromise;
   const exported=JSON.parse(fs.readFileSync(await download.path(),'utf8'));
@@ -143,17 +178,17 @@ test('Flow Plus details survive export, import, duplicate and history',async({pa
   await expect(page.locator('#banner')).toContainText('已匯入');await expect(page.locator('.card')).toHaveCount(1);
   data=await stored(page);expect(JSON.parse(data.cards[0].blocks[0].aiContext).flowPlus.nodes.A.actions).toBe('核對來源資料');
   await page.locator('.card').dblclick();await page.locator('.fp-node[data-node="A"]').click();
-  await expect(page.getByRole('textbox',{name:'處理動作'})).toHaveValue('核對來源資料');
+  await expect(page.locator('.fp-detail-body')).toContainText('核對來源資料');
 });
 test('Flow Plus details persist in Drive mock and mobile detail drawer',async({page})=>{
   const api=await mockDrive(page);await mockPele(page);await boot(page);await openBoard(page);
-  await clickTool(page,'btnFlowPlus');await page.locator('.fp-node[data-node="B"]').click();
+  await clickTool(page,'btnFlowPlus');await page.locator('.fp-node[data-node="B"]').click();await page.getByRole('button',{name:'編輯步驟'}).click();await page.locator('.fp-advanced summary').click();
   await page.getByRole('textbox',{name:'執行者'}).fill('中台系統');await page.getByRole('button',{name:'關閉 Flow Plus'}).click();
   await page.locator('#btnSaveNow').click();await expect(page.locator('#saveStatus')).toHaveText('剛剛儲存');
   const remote=JSON.parse(api.files.a);expect(JSON.parse(remote.cards.at(-1).blocks[0].aiContext).flowPlus.nodes.B.actor).toBe('中台系統');
   await page.setViewportSize({width:390,height:844});await page.locator('.flowpluscard').dblclick();
   await page.locator('.fp-node[data-node="B"]').click();await expect(page.locator('.fp-details')).toBeVisible();
-  await expect(page.getByRole('textbox',{name:'執行者'})).toHaveValue('中台系統');
+  await expect(page.locator('.fp-detail-body')).toContainText('中台系統');
   await page.getByRole('button',{name:'關閉節點詳細資訊'}).click();await expect(page.locator('.fp-details')).toBeHidden();
 });
 test('expanded icon picker and clipboard screenshot paste preserve image layer',async({page,context})=>{
