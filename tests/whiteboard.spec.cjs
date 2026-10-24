@@ -60,6 +60,15 @@ test('Pele flow card creates, edits, copies, restores and reloads safely',async(
   await page.waitForTimeout(500);data=await stored(page);expect(data.cards[1].blocks[0].type).toBe('diagram');await page.locator('#btnUndo').click();await expect(page.locator('.card')).toHaveCount(1);await page.locator('#btnRedo').click();await expect(page.locator('.card')).toHaveCount(2);
   await page.waitForTimeout(500);await page.reload();await page.locator('#homeRouteLocal').click();await page.locator('#homeContinue').click();await expect(page.locator('.card')).toHaveCount(2);await expect(page.locator('.pvdiagram svg')).toHaveCount(4);
 });
+test('Pele previews color simple lanes while preserving explicit cluster styles',async({page})=>{
+ await mockDrive(page);await mockPele(page);await boot(page);
+ const result=await page.evaluate(()=>{
+   window.pele.render=()=>({svg:'<svg xmlns="http://www.w3.org/2000/svg" class="pele pele-flowchart" style="--_a:var(--pele-surface-alt,#e6e6e6);--_s:var(--pele-surface,#f3f3f3)"><g class="pele-cluster" data-id="MIDDLE"><rect fill="var(--_a)" stroke="var(--_b)" fill-opacity="0.5"/></g><g class="pele-cluster" data-id="OMG"><rect fill="var(--_a)" stroke="var(--_b)" fill-opacity="0.5"/></g><g class="pele-cluster" data-id="CUSTOM"><rect fill="var(--_a)" style="fill:#ffccee"/></g><g class="pele-node pele-shape-diam"><polygon fill="var(--_s)"/></g></svg>'});
+   const host=document.createElement('div');document.body.append(host);const ok=JuicePeleFlow.draw(host,'flowchart LR\nsubgraph MIDDLE [中台]\nA[接收]\nend\nsubgraph OMG [接單]\nB{檢查}\nend\nsubgraph CUSTOM [手動]\nC[處理]\nend');
+   const lanes=[...host.querySelectorAll('.pele-cluster')].map(el=>({fill:el.style.getPropertyValue('--_a'),computed:getComputedStyle(el.querySelector('rect')).fill,opacity:el.querySelector('rect').getAttribute('fill-opacity')}));const decision=host.querySelector('.pele-shape-diam').style.getPropertyValue('--_s');host.remove();return{ok,lanes,decision};
+ });
+ expect(result.ok).toBe(true);expect(result.lanes[0]).toEqual({fill:'#d4ecdc',computed:'rgb(212, 236, 220)',opacity:'0.8'});expect(result.lanes[1]).toEqual({fill:'#dce8fa',computed:'rgb(220, 232, 250)',opacity:'0.8'});expect(result.lanes[2].fill).toBe('');expect(result.lanes[2].computed).toBe('rgb(255, 204, 238)');expect(result.decision).toBe('#fff5df');
+});
 test('flow studio, flow card sizing and layered icons persist safely',async({page})=>{
   await mockDrive(page);await mockPele(page);await boot(page);
   await page.locator('#btnFlow').click();await expect(page.locator('.card')).toHaveCSS('width','480px');
