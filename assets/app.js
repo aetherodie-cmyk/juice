@@ -949,8 +949,8 @@
   $('tagCopy').addEventListener('click',e=>{if(currentTag)copyText(tagToMd(currentTag),e.currentTarget);});
 
   // ============ MAP BACKGROUND & IMAGE OBJECTS ============
-  // image objects (rendered at bottom layer; cards float above)
-  function makeImageEl(im){const el=document.createElement('div');el.className='imgobj';el.dataset.id=im.id;
+  // image objects can sit below or above cards
+  function makeImageEl(im){const el=document.createElement('div');el.className='imgobj '+(im.layer==='above'?'above':'below');el.dataset.id=im.id;
     el.style.left=im.x+'px';el.style.top=im.y+'px';el.style.width=im.w+'px';el.style.opacity=im.opacity;
     const img=document.createElement('img');img.src=im.src;el.appendChild(img);
     const res=document.createElement('div');res.className='ires';el.appendChild(res);
@@ -960,9 +960,9 @@
   function deselectImage(){if(selectedImage){imageEls.get(selectedImage)?.classList.remove('sel');selectedImage=null;}hideImgbar();}
   function selectImage(id){deselectLink();selection.forEach(x=>cardEls.get(x)?.classList.remove('sel'));selection.clear();selectGroup(null);hideCardbar();updateGroupBtn();
     if(selectedImage)imageEls.get(selectedImage)?.classList.remove('sel');selectedImage=id;imageEls.get(id)?.classList.add('sel');showImgbar();}
-  function showImgbar(){const im=byId(state.images,selectedImage);if(!im)return;$('imgOpacity').value=im.opacity;
+  function showImgbar(){const im=byId(state.images,selectedImage);if(!im)return;$('imgOpacity').value=im.opacity;$('imgLayer').value=im.layer==='above'?'above':'below';
     const r=canvas.getBoundingClientRect();const sx=r.left+state.view.x+(im.x+im.w/2)*state.view.zoom,sy=r.top+state.view.y+im.y*state.view.zoom;
-    const bar=$('imgbar');bar.style.display='flex';bar.style.left=(sx-bar.offsetWidth/2)+'px';bar.style.top=Math.max(58,sy-bar.offsetHeight-12)+'px';}
+    const bar=$('imgbar');bar.style.display='flex';bar.style.left=Math.max(8,Math.min(sx-bar.offsetWidth/2,innerWidth-bar.offsetWidth-8))+'px';bar.style.top=Math.max(58,sy-bar.offsetHeight-12)+'px';}
   function hideImgbar(){$('imgbar').style.display='none';}
   const deleteImage=(id)=>destructive(()=>deleteImageNow(id));
   function deleteImageNow(id){state.images=state.images.filter(i=>i.id!==id);imageEls.get(id)?.remove();imageEls.delete(id);if(selectedImage===id)selectedImage=null;hideImgbar();updateBgBtn();scheduleSave();}
@@ -981,11 +981,12 @@
   function onResizeMove(e){if(!iresz)return;const p=screenToWorld(e.clientX,e.clientY);iresz.im.w=Math.max(80,Math.round(iresz.ow+(p.x-iresz.start.x)));imageEls.get(iresz.im.id).style.width=iresz.im.w+'px';}
   function onResizeUp(){window.removeEventListener('pointermove',onResizeMove);window.removeEventListener('pointerup',onResizeUp);if(iresz)scheduleSave();showImgbar();iresz=null;}
   $('imgOpacity').addEventListener('input',e=>{const im=byId(state.images,selectedImage);if(!im)return;im.opacity=parseFloat(e.target.value);imageEls.get(im.id).style.opacity=im.opacity;scheduleSave();});
+  $('imgLayer').addEventListener('change',e=>{const im=byId(state.images,selectedImage);if(!im)return;im.layer=e.target.value==='above'?'above':'below';const el=imageEls.get(im.id);el.classList.toggle('above',im.layer==='above');el.classList.toggle('below',im.layer==='below');scheduleSave();});
   $('imgLock').addEventListener('click',()=>setBgEdit(false));
   $('imgDelete').addEventListener('click',()=>{if(selectedImage)deleteImage(selectedImage);});
   $('btnBg').addEventListener('click',()=>setBgEdit(!bgEdit));
   function placeImageObject(dataUrl,w,h,opacity,dispCap){const r=canvas.getBoundingClientRect();const c0=screenToWorld(r.left+r.width/2,r.top+r.height/2);
-    const dispW=Math.min(w||500,dispCap||700);const im={id:uid(),x:Math.round(c0.x-dispW/2),y:Math.round(c0.y-dispW*((h||300)/(w||500))/2),w:dispW,src:dataUrl,opacity:(opacity==null?0.55:opacity)};
+    const dispW=Math.min(w||500,dispCap||700);const im={id:uid(),x:Math.round(c0.x-dispW/2),y:Math.round(c0.y-dispW*((h||300)/(w||500))/2),w:dispW,src:dataUrl,opacity:(opacity==null?0.55:opacity),layer:'below'};
     state.images.push(im);makeImageEl(im);setBgEdit(true);selectImage(im.id);scheduleSave();}
   function placeMapImage(dataUrl,w,h){placeImageObject(dataUrl,w,h,0.55,700);}
   function uploadReferenceImage(){const i=document.createElement('input');i.type='file';i.accept='image/*';
