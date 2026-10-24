@@ -1,0 +1,25 @@
+/* The Classic reader is in the document top layer, never inside the board transform. */
+#classicFlowReader{box-sizing:border-box;position:fixed;inset:0;width:calc(100vw - 32px);height:calc(100vh - 32px);height:calc(100dvh - 32px);max-width:none;max-height:none;margin:auto;padding:0;border:1px solid #d9dfe7;border-radius:14px;background:#fff;color:#202633;box-shadow:0 20px 70px #0004;overflow:hidden;font:14px var(--font,system-ui,sans-serif);transform:none;will-change:auto}
+#classicFlowReader[open]{display:block}
+#classicFlowReader .classic-reader-frame{display:flex;flex-direction:column;width:100%;height:100%;background:#fff}
+#classicFlowReader::backdrop{background:#15203399}
+#classicFlowReader .classic-reader-frame:fullscreen{width:100vw;height:100vh;height:100dvh;border:0;border-radius:0}
+#classicFlowReader header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 18px;border-bottom:1px solid #d9dfe7;flex:none}
+#classicFlowReader header div{min-width:0;display:flex;align-items:center;gap:12px}
+#classicFlowReader strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:17px}
+#classicFlowReader header span{white-space:nowrap;color:#687385;font-size:12px}
+#classicFlowReader nav{display:flex;align-items:center;flex-wrap:wrap;gap:9px;padding:10px 18px;border-bottom:1px solid #d9dfe7;flex:none}
+#classicFlowReader button,#classicFlowReader input{box-sizing:border-box;border:1px solid #cbd3df;border-radius:7px;padding:7px 10px;background:#fff;color:inherit;font:inherit}
+#classicFlowReader button{cursor:pointer;white-space:nowrap}
+#classicFlowReader button:hover,#classicFlowReader button[aria-pressed=true]{background:#edf3ff;border-color:#5c7cab}
+#classicFlowReader :focus-visible{outline:3px solid #3264b8;outline-offset:2px}
+#classicFlowReader label{display:flex;align-items:center;gap:6px;white-space:nowrap}
+#classicFlowReader input{width:84px}
+#classicFlowReader output{margin-left:auto;color:#687385;font-variant-numeric:tabular-nums;font-size:12px}
+#classicFlowReader .classic-reader-viewport{flex:1;min-height:0;min-width:0;overflow:auto;overscroll-behavior:contain;touch-action:pan-x pan-y;background:#f1f4f8;cursor:grab;position:relative;will-change:auto;transform:none;scroll-behavior:auto}
+#classicFlowReader .classic-reader-viewport.panning{cursor:grabbing;user-select:none}
+#classicFlowReader .classic-reader-surface{box-sizing:border-box;transform:none;will-change:auto}
+#classicFlowReader footer{flex:none;padding:8px 18px;border-top:1px solid #d9dfe7;color:#687385;font-size:12px}
+.flow-reader-open{border:1px solid var(--line,#cbd3df);border-radius:7px;background:#fff;color:var(--ink,#202633);padding:5px 9px;font:12px var(--font,system-ui,sans-serif);cursor:pointer;margin:4px 0 6px}
+.flow-reader-open:hover{border-color:var(--accent,#3264b8);color:var(--accent,#3264b8)}
+@media(max-width:640px){#classicFlowReader{width:100vw;height:100vh;height:100dvh;border:0;border-radius:0}#classicFlowReader header,#classicFlowReader nav{padding:10px}#classicFlowReader header span{display:none}#classicFlowReader nav{gap:6px}#classicFlowReader output{width:100%;margin:0}#classicFlowReader footer{padding:8px 10px}#classicFlowReader button{padding:7px 8px}}

@@ -1,0 +1,13 @@
+<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><title>閱讀器縮放診斷（合成測試資料）</title>
+<style>
+body{font:14px system-ui;margin:20px;background:#edf1f7}button{padding:8px;margin:8px}.columns{display:flex;gap:16px}.probe{background:white;padding:12px;flex:1;min-width:0}.port{position:relative;overflow:hidden;height:280px}.world{transform-origin:0 0}.hinted{will-change:transform}.probe svg{display:block;max-width:none;height:auto}
+</style>
+<h1>縮放清晰度比較（不修改白板）</h1><p>左、中兩欄先把相同向量縮為 20%，再放大；右欄直接設定 SVG 實際寬高。此測試只評估本機瀏覽器，不認定 will-change 為唯一根因。</p>
+<div><button data-scale="1">100%</button><button data-scale="2">200%</button><button data-scale="4">400%</button></div>
+<div class="columns"><section class="probe"><h2>transform＋will-change</h2><div class="port"><div class="world hinted" id="hinted"></div></div></section><section class="probe"><h2>transform，不設 will-change</h2><div class="port"><div class="world" id="plain"></div></div></section><section class="probe"><h2>SVG 實際寬高（閱讀器）</h2><div class="port" id="native"></div></section></div>
+<script>
+const svg='<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="600" viewBox="0 0 1800 600" style="font:16px sans-serif"><rect x="6" y="6" width="1760" height="560" fill="#e7f0ff" stroke="#2463a9"/><text x="24" y="40">中台系統 · 訂單接收 · 測試資料</text><rect x="24" y="65" width="240" height="64" fill="#fff" stroke="#4f6582"/><text x="36" y="104">核對訂單 → 權益分派</text><path d="M264,96L344,96" stroke="#123456"/><text x="24" y="165">Product_Code / CLOSED / Interface</text></svg>';
+for(const id of ['hinted','plain','native'])document.getElementById(id).innerHTML=svg;
+for(const id of ['hinted','plain'])document.querySelector('#'+id+' svg').style.width='360px';
+document.querySelectorAll('[data-scale]').forEach(button=>button.onclick=()=>{const scale=Number(button.dataset.scale);for(const id of ['hinted','plain'])document.getElementById(id).style.transform='scale('+(scale/0.2)+')';const node=document.querySelector('#native svg');node.style.width=(1800*scale)+'px';node.style.height=(600*scale)+'px';document.body.dataset.scale=scale;});
+</script></html>

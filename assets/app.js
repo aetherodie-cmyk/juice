@@ -373,6 +373,24 @@
   // ---------- card tiles ----------
   function hasDiagram(c){return c.blocks?.some(b=>b.type==='diagram');}
   function flowPlusBlock(c){return c.blocks?.find(b=>window.JuiceFlowPlus.isBlock(b));}
+  // Read-only entry point, also usable by future system-map detail links.
+  function openClassicReader({cardId,blockId,opener}){
+    const c=byId(state.cards,cardId),b=c?.blocks?.find(block=>block.id===blockId&&block.type==='diagram');
+    if(!b)return false;
+    const rendered=cardEls.get(c.id)?.querySelector('.pvdiagram[data-flow-block="'+CSS.escape(b.id)+'"] svg');
+    const host=document.createElement('div');
+    if(!rendered&&!window.JuicePeleFlow.draw(host,window.JuicePeleFlow.decode(b.html||''))){showBanner(host.textContent||'流程圖尚未完成渲染');return false;}
+    try{return window.JuiceClassicReader.open({svg:rendered||host.querySelector('svg'),title:c.title||'Classic 流程圖',cardId:c.id,blockId:b.id,opener});}
+    catch(error){showBanner(error.message);return false;}
+  }
+  window.JuiceClassicFlows=Object.freeze({openReader:openClassicReader});
+  function classicReaderButton(c,b){
+    const button=document.createElement('button');button.type='button';button.className='flow-reader-open';button.textContent='獨立檢視';button.dataset.flowBlock=b.id;
+    button.addEventListener('pointerdown',event=>event.stopPropagation());
+    button.addEventListener('dblclick',event=>event.stopPropagation());
+    button.addEventListener('click',event=>{event.stopPropagation();openClassicReader({cardId:c.id,blockId:b.id,opener:button});});return button;
+  }
+
   function makeCardEl(c){const el=document.createElement('div');el.className='card'+(hasDiagram(c)?' flowcard':'')+(flowPlusBlock(c)?' flowpluscard':'');el.dataset.id=c.id;
     el.innerHTML='<div class="ctop"><span class="ccaret">▾</span><div class="ctitle"></div></div><div class="cprev"></div><div class="ctags"></div><div class="handle"></div><div class="expand">⤢</div><div class="card-resize" title="調整流程圖卡寬度"></div>';
     world.appendChild(el);cardEls.set(c.id,el);placeCard(c);applyCardColor(c);applyCardShape(c);renderTile(c);
@@ -427,6 +445,7 @@
     pv.querySelectorAll('.pvdiagram').forEach(host=>{
       const block=(c.blocks||[]).find(b=>b.id===host.dataset.flowBlock);
       window.JuicePeleFlow.draw(host,window.JuicePeleFlow.decode(block?.html||''));
+      if(block)host.before(classicReaderButton(c,block));
     });}
   const placeCard=c=>{const el=cardEls.get(c.id);el.style.left=c.x+'px';el.style.top=c.y+'px';el.style.width=c.w?c.w+'px':'';el.style.zIndex=String(100+(c.z||0));};
   const applyCardColor=c=>{const el=cardEls.get(c.id),col=COLORS[c.color];el.style.background=col.bg;el.style.borderColor=col.border;};
@@ -617,7 +636,7 @@
       let paintTimer;editor.addEventListener('input',()=>{
         b.html=escapeHtml(editor.value);touch(c);scheduleSave('block:'+c.id+':'+b.id);
         clearTimeout(paintTimer);paintTimer=setTimeout(()=>{repaint();renderTile(c);refreshLinksFor(c.id);},220);
-      });main.append(studio,editor,preview);return el;
+      });main.append(studio,classicReaderButton(c,b),editor,preview);return el;
     }
     if(b.type==='todo'){const chk=document.createElement('div');chk.className='chk';chk.textContent=b.checked?'✓':'';
       chk.addEventListener('click',()=>{b.checked=!b.checked;el.classList.toggle('done',b.checked);chk.textContent=b.checked?'✓':'';touch(c);renderTile(c);scheduleSave();});main.appendChild(chk);}
@@ -821,6 +840,7 @@
     if(/^\s*subgraph\s/m.test(source.value)&&(c.w||480)===480){c.w=900;placeCard(c);refreshLinksFor(c.id);touch(c);scheduleSave('size:'+c.id);}
     root.querySelector('.studio-settings')?.remove();root.querySelector('.flow-builder')?.remove();root.classList.remove('visual-mode');
     const settings=document.createElement('div');settings.className='studio-settings';
+    settings.appendChild(classicReaderButton(c,b));
     const title=document.createElement('input');title.value=c.title;title.setAttribute('aria-label','流程圖名稱');title.oninput=()=>{c.title=title.value;renderTile(c);touch(c);scheduleSave();};settings.appendChild(title);
     const aiPrompt=document.createElement('button');aiPrompt.textContent='讓 AI 幫我整理';aiPrompt.type='button';aiPrompt.onclick=()=>window.JuiceFlowAI.openPrompt(c.title,source.value+(b.aiContext?'\n討論紀錄：'+b.aiContext:''));settings.appendChild(aiPrompt);
     const plusCopy=document.createElement('button');plusCopy.textContent='建立 Flow Plus 副本';plusCopy.type='button';plusCopy.onclick=()=>createFlowPlusCopy(c,b);settings.appendChild(plusCopy);

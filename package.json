@@ -3,7 +3,8 @@
   "private": true,
   "scripts": {
     "test": "playwright test",
-    "check": "node --check assets/core.js && node --check assets/app.js && node --check assets/pele-flow.js && node --check assets/flow-builder.js && node --check assets/flow-ai.js && node --check assets/flow-plus.js"
+    "test:reader": "playwright test --config=playwright.reader.config.cjs",
+    "check": "node --check assets/core.js && node --check assets/app.js && node --check assets/pele-flow.js && node --check assets/flow-builder.js && node --check assets/flow-ai.js && node --check assets/flow-plus.js && node --check assets/flow-reader.js"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1"
