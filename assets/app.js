@@ -372,7 +372,8 @@
 
   // ---------- card tiles ----------
   function hasDiagram(c){return c.blocks?.some(b=>b.type==='diagram');}
-  function makeCardEl(c){const el=document.createElement('div');el.className='card'+(hasDiagram(c)?' flowcard':'');el.dataset.id=c.id;
+  function flowPlusBlock(c){return c.blocks?.find(b=>window.JuiceFlowPlus.isBlock(b));}
+  function makeCardEl(c){const el=document.createElement('div');el.className='card'+(hasDiagram(c)?' flowcard':'')+(flowPlusBlock(c)?' flowpluscard':'');el.dataset.id=c.id;
     el.innerHTML='<div class="ctop"><span class="ccaret">▾</span><div class="ctitle"></div></div><div class="cprev"></div><div class="ctags"></div><div class="handle"></div><div class="expand">⤢</div><div class="card-resize" title="調整流程圖卡寬度"></div>';
     world.appendChild(el);cardEls.set(c.id,el);placeCard(c);applyCardColor(c);applyCardShape(c);renderTile(c);
     el.addEventListener('pointerdown',e=>onCardDown(e,c));
@@ -405,6 +406,7 @@
       n++;}
     return {html:out,hidden};}
   function renderTile(c){const el=cardEls.get(c.id);if(!el)return;
+    el.classList.toggle('flowpluscard',!!flowPlusBlock(c));
     const tt=el.querySelector('.ctitle'),pv=el.querySelector('.cprev'),tg=el.querySelector('.ctags'),caret=el.querySelector('.ccaret');
     const lbl=cardLabel(c),preview=blocksPreviewHTML(c.blocks),prev=preview.html;
     const hasContent=!!prev||(c.tags&&c.tags.length>0);
@@ -545,6 +547,7 @@
   function autoGrow(ta){ta.style.height='auto';ta.style.height=ta.scrollHeight+'px';}
 
   function openPanel(c,focusTitle){openCardId=c.id;selectCard(c.id,false);
+    const plus=flowPlusBlock(c);if(plus){closePanel();openFlowPlus(c,plus);return;}
     if(c.blocks.length===1&&hasDiagram(c)){closePanel();openFlowStudio(c,c.blocks[0]);return;}
     $('pHeadDot').style.background=COLORS[c.color].bg;$('pHeadDot').style.borderColor=COLORS[c.color].border;
     pTitle.value=c.title||'';autoGrow(pTitle);renderBlocks(c);renderTags(c);renderInfo(c);renderConn(c);renderPanelSwatches(c);renderShapePicker(c);
@@ -786,12 +789,20 @@
   function ensureFlowStudio(){if(flowStudio)return flowStudio;const root=document.createElement('div');root.id='flowStudio';root.innerHTML='<section class="flow-studio-box" role="dialog" aria-modal="true" aria-label="流程圖編輯器"><header><strong>流程圖編輯器</strong><span>左側流程碼，右側即時預覽</span><button type="button" aria-label="關閉流程圖編輯器">×</button></header><main><textarea aria-label="流程圖原始碼"></textarea><div class="flow-studio-divider" aria-label="拖曳調整欄位寬度"></div><div class="flow-studio-preview"></div></main></section>';
     document.body.appendChild(root);root.querySelector('header button').addEventListener('click',()=>closeFlowStudio());root.addEventListener('pointerdown',e=>{if(e.target===root)closeFlowStudio();});document.addEventListener('keydown',e=>{if(e.key==='Escape'&&root.classList.contains('open')){e.preventDefault();closeFlowStudio();}});flowStudio=root;return root;}
   function closeFlowStudio(){if(!flowStudio)return;flowStudio.classList.remove('open');document.body.classList.remove('flow-studio-open');}
+  function openFlowPlus(c,b){try{window.JuiceFlowPlus.open({card:c,block:b,onSave:()=>{touch(c);renderTile(c);refreshLinksFor(c.id);scheduleSave('flow-plus:'+c.id+':'+b.id);}});}catch(error){showBanner(error.message);}}
+  function createFlowPlusCopy(c,b){
+    const source=window.JuicePeleFlow.decode(b.html||'');let context;
+    try{context=window.JuiceFlowPlus.createContext(source,c.id,b.aiContext||'');}catch(error){showBanner(error.message);return;}
+    const copy=addCard(c.x+320,c.y+130);copy.title=(c.title||'流程圖')+' · Flow Plus';copy.w=Math.max(680,c.w||480);
+    const block=mkBlock('diagram',b.html);block.aiContext=context;block.diagramPositions=b.diagramPositions||'';copy.blocks=[block];closePanel();renderTile(copy);touch(copy);scheduleSave();closeFlowStudio();openFlowPlus(copy,block);
+  }
   function openFlowStudio(c,b){const root=ensureFlowStudio(),source=root.querySelector('textarea'),preview=root.querySelector('.flow-studio-preview'),divider=root.querySelector('.flow-studio-divider');const decoded=window.JuicePeleFlow.decode(b.html||'');source.flowPositions=b.diagramPositions||decoded.match(/%% juice-positions (.*)/)?.[1]||'';source.value=decoded.replace(/^%% juice-positions .*$/gm,'').trim();const repaint=()=>window.JuicePeleFlow.draw(preview,source.value);repaint();
     if(/^\s*subgraph\s/m.test(source.value)&&(c.w||480)===480){c.w=900;placeCard(c);refreshLinksFor(c.id);touch(c);scheduleSave('size:'+c.id);}
     root.querySelector('.studio-settings')?.remove();root.querySelector('.flow-builder')?.remove();root.classList.remove('visual-mode');
     const settings=document.createElement('div');settings.className='studio-settings';
     const title=document.createElement('input');title.value=c.title;title.setAttribute('aria-label','流程圖名稱');title.oninput=()=>{c.title=title.value;renderTile(c);touch(c);scheduleSave();};settings.appendChild(title);
     const aiPrompt=document.createElement('button');aiPrompt.textContent='讓 AI 幫我整理';aiPrompt.type='button';aiPrompt.onclick=()=>window.JuiceFlowAI.openPrompt(c.title,source.value+(b.aiContext?'\n討論紀錄：'+b.aiContext:''));settings.appendChild(aiPrompt);
+    const plusCopy=document.createElement('button');plusCopy.textContent='建立 Flow Plus 副本';plusCopy.type='button';plusCopy.onclick=()=>createFlowPlusCopy(c,b);settings.appendChild(plusCopy);
     const aiImport=document.createElement('button');aiImport.textContent='貼上 AI 結果';aiImport.type='button';aiImport.onclick=()=>window.JuiceFlowAI.openImport(async(data,update)=>{
       if(update&&!state.cards.some(card=>card.id===c.id&&card.blocks.some(block=>block.id===b.id)))throw new Error('目前流程已不存在，請選擇新增流程圖');
       await Core.backup(structuredClone(state),'套用 AI 流程前');let target=c,block=b;
@@ -863,6 +874,10 @@
     const c=addCard(w.x,w.y);c.title='新流程圖';c.w=480;
     c.blocks=[mkBlock('diagram',escapeHtml(window.JuicePeleFlow.TEMPLATE))];
     pTitle.value=c.title;renderTile(c);renderBlocks(c);touch(c);scheduleSave();
+  });
+  $('btnFlowPlus').addEventListener('click',()=>{
+    const r=canvas.getBoundingClientRect(),w=screenToWorld(r.left+r.width/2,r.top+r.height/2),c=addCard(w.x,w.y),source=window.JuicePeleFlow.TEMPLATE;
+    c.title='新 Flow Plus';c.w=900;const block=mkBlock('diagram',escapeHtml(source));block.aiContext=window.JuiceFlowPlus.createContext(source);c.blocks=[block];closePanel();renderTile(c);touch(c);scheduleSave();openFlowPlus(c,block);
   });
   $('btnGroup').addEventListener('click',makeGroup);
   $('btnZoomIn').addEventListener('click',()=>setZoom(state.view.zoom*1.15));

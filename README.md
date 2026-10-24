@@ -1,5 +1,7 @@
 # 聚思白板（Juice）
 
+Flow Plus Phase 1 的使用方式與資料契約見 [docs/flow-plus.md](docs/flow-plus.md)。
+
 純前端個人白板。卡片、區塊編輯、連線、標籤、參考圖片、地圖擷取與 AI JSON 收件匣；不包含 AI 模型服務或後端資料庫。
 
 ## 開始使用
