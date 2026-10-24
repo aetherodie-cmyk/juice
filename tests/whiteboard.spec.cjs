@@ -74,9 +74,16 @@ test('graph editing keeps source visible and synchronizes both ways',async({page
   await mockDrive(page);await mockPele(page);await boot(page);await page.locator('#btnFlow').click();await page.locator('.flow-studio-open').click();await page.getByRole('button',{name:'圖形拖拉工具',exact:true}).click();
   const source=page.locator('#flowStudio textarea');await expect(source).toBeVisible();await source.fill('flowchart TD\nA[原始文字] --> B[下一步]\nstyle A fill:#ffeeaa');await expect(page.locator('.fb-node')).toHaveCount(2);await expect(page.locator('.fb-node').first()).toHaveText('原始文字');await page.locator('[data-add="rect"]').click();await expect(source).toHaveValue(/style A fill:#ffeeaa/);await expect(source).toHaveValue(/flowchart TD/);await expect(source).toHaveValue(/新步驟/);
 });
+test('structured flow forms preserve semantics and reject unsupported conversion',async({page})=>{
+ await mockDrive(page);await mockPele(page);await boot(page);await page.locator('#btnFlow').click();await page.locator('.flow-studio-open').click();await page.getByRole('button',{name:'圖形拖拉工具',exact:true}).click();
+ const source=page.locator('#flowStudio textarea');await page.getByRole('textbox',{name:'步驟 2 名稱',exact:true}).fill('確認客戶資料');await expect(source).toHaveValue(/B\{確認客戶資料\}/);await page.getByRole('textbox',{name:'連線 2 條件',exact:true}).fill('核准');await expect(source).toHaveValue(/\|核准\|/);
+ const roundtrip=await page.evaluate(()=>{const model=JuiceFlowBuilder.parse(document.querySelector('#flowStudio textarea').value);return JuiceFlowBuilder.parse(JuiceFlowBuilder.serialize(model));});expect(roundtrip.nodes).toHaveLength(4);expect(roundtrip.edges).toHaveLength(4);expect(roundtrip.edges[3].dotted).toBe(true);
+ await page.locator('#flowStudio').screenshot({path:'/tmp/juice-structured-flow.png'});
+ await source.fill('flowchart LR\nsubgraph X\nA[Test]\nend');await expect(page.locator('.fb-status')).toContainText('尚未支援');await expect(page.locator('[data-add="rect"]')).toBeDisabled();await expect(source).toHaveValue('flowchart LR\nsubgraph X\nA[Test]\nend');
+});
 test('flow node rename and delete work and card actions use context menus',async({page})=>{
  await mockDrive(page);await mockPele(page);await boot(page);await page.locator('#btnFlow').click();await page.locator('.flow-studio-open').click();await page.getByRole('button',{name:'圖形拖拉工具',exact:true}).click();
- await expect(page.locator('[data-delete]')).toBeDisabled();page.once('dialog',d=>d.accept('已修改的節點'));await page.locator('.fb-node').first().dblclick();await expect(page.locator('#flowStudio textarea')).toHaveValue(/已修改的節點/);await page.locator('.fb-node').first().click();await page.locator('[data-delete]').click();await expect(page.locator('.fb-node')).toHaveCount(3);
+ await expect(page.locator('[data-delete]')).toBeDisabled();await page.locator('.fb-node').first().dblclick();await page.getByRole('textbox',{name:'步驟 1 名稱',exact:true}).fill('已修改的節點');await expect(page.locator('#flowStudio textarea')).toHaveValue(/已修改的節點/);await page.locator('.fb-node').first().click();await page.locator('[data-delete]').click();await expect(page.locator('.fb-node')).toHaveCount(3);
  await page.locator('#flowStudio header button').click();await page.locator('#pClose').click();await page.locator('.card').click({button:'right'});await expect(page.locator('.bmenu')).toContainText('移到最上層');await expect(page.locator('#btnFront')).toBeHidden();
 });
 test('diagram blocks survive JSON import, legacy normalization and Drive round trips',async({page})=>{
