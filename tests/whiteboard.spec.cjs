@@ -649,3 +649,35 @@ test('logging in from local editor cannot expose a restored cloud cache for edit
   await page.locator('#btnDrive').click();await expect(page.locator('#home')).toBeVisible();await expect(page.locator('#homeAccount')).toContainText('alice@example.test');await page.keyboard.press('Escape');await expect(page.locator('#home')).toBeVisible();expect(await page.locator('#app').evaluate(el=>el.inert)).toBe(true);
   await page.locator('#homeDriveList .home-board').filter({hasText:'Board A'}).click();await expect(page.locator('#recoveryLocalSummary')).toContainText('Pending cloud content');await page.locator('#recoveryDialog button[value="cancel"]').click();await expect(page.locator('#home')).toBeVisible();
 });
+
+test('native card arrows stay outside facing sides with clear directional markers',async({page})=>{
+  const data={cards:[
+    {id:'a',title:'Order',x:60,y:160,w:180},
+    {id:'b',title:'OMS',x:500,y:120,w:180},
+    {id:'c',title:'Return',x:60,y:360,w:180},
+    {id:'d',title:'ERP',x:500,y:360,w:180},
+    {id:'e',title:'Bank',x:850,y:100,w:180},
+    {id:'f',title:'Payment',x:850,y:310,w:180},
+    {id:'g',title:'Close source',x:60,y:550,w:180},
+    {id:'h',title:'Close target',x:260,y:550,w:180}],
+    links:[{id:'forward',from:'a',to:'b',dir:'to',label:'BOOKED'},
+      {id:'reverse',from:'d',to:'c',dir:'both',label:'return'},
+      {id:'vertical',from:'e',to:'f',dir:'to'},
+      {id:'close',from:'g',to:'h',dir:'none'}],view:{x:0,y:0,zoom:1}};
+  await page.addInitScript(data=>localStorage.setItem('sju-whiteboard-v2',JSON.stringify(data)),data);
+  await boot(page);await expect(page.locator('#linkLayer g[data-id]')).toHaveCount(4);
+  const inspect=()=>page.evaluate(()=>[...document.querySelectorAll('#linkLayer g[data-id]')].map(g=>{
+    const path=g.querySelector('.lvis'),len=path.getTotalLength(),start=path.getPointAtLength(0),end=path.getPointAtLength(len);return {id:g.dataset.id,
+      start:{x:start.x,y:start.y},end:{x:end.x,y:end.y},
+      startMarker:path.getAttribute('marker-start'),endMarker:path.getAttribute('marker-end')};}));
+  const paths=await inspect(),map=Object.fromEntries(paths.map(p=>[p.id,p]));
+  expect(map.forward.start.x).toBe(250);expect(map.forward.end.x).toBe(490);
+  expect(map.reverse.start.x).toBe(490);expect(map.reverse.end.x).toBe(250);
+  expect(map.vertical.start.y).toBeGreaterThan(140);expect(map.vertical.end.y).toBe(300);
+  expect(map.close.start.x).toBe(245);expect(map.close.end.x).toBe(255);
+  expect(map.forward.endMarker).toBe('url(#arrowhead)');expect(map.forward.startMarker).toBeNull();
+  expect(map.reverse.startMarker).toBe('url(#arrowstart)');expect(map.reverse.endMarker).toBe('url(#arrowhead)');
+  expect(map.close.startMarker).toBeNull();expect(map.close.endMarker).toBeNull();
+  await page.locator('#btnZoomOut').click();expect(await inspect()).toEqual(paths);
+  const saved=await stored(page);expect(saved.links).toEqual(data.links.map(l=>({label:'',...l})));
+});

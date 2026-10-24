@@ -463,19 +463,28 @@
     vis.removeAttribute('marker-end');vis.removeAttribute('marker-start');
     if(l.dir==='to'||l.dir==='both')vis.setAttribute('marker-end','url(#arrowhead)');
     if(l.dir==='both')vis.setAttribute('marker-start','url(#arrowstart)');}
-  function linkPath(x1,y1,x2,y2){const adx=Math.abs(x2-x1),ady=Math.abs(y2-y1);
-    if(ady>=adx){const d=Math.max(40,ady*0.4);return `M ${x1} ${y1} C ${x1} ${y1+(y2>y1?d:-d)}, ${x2} ${y2-(y2>y1?d:-d)}, ${x2} ${y2}`;}
-    const d=Math.max(40,adx*0.4);return `M ${x1} ${y1} C ${x1+(x2>x1?d:-d)} ${y1}, ${x2-(x2>x1?d:-d)} ${y2}, ${x2} ${y2}`;}
+  function linkPath(x1,y1,x2,y2,axis){const adx=Math.abs(x2-x1),ady=Math.abs(y2-y1);
+    if(axis==='y'||(!axis&&ady>=adx)){const d=Math.min(ady/2,Math.max(40,ady*0.4));return `M ${x1} ${y1} C ${x1} ${y1+(y2>y1?d:-d)}, ${x2} ${y2-(y2>y1?d:-d)}, ${x2} ${y2}`;}
+    const d=Math.min(adx/2,Math.max(40,adx*0.4));return `M ${x1} ${y1} C ${x1+(x2>x1?d:-d)} ${y1}, ${x2-(x2>x1?d:-d)} ${y2}, ${x2} ${y2}`;}
   function edgePoint(cx,cy,hw,hh,tx,ty){let dx=tx-cx,dy=ty-cy;if(!dx&&!dy)return {x:cx,y:cy};
     const sx=dx!==0?hw/Math.abs(dx):Infinity,sy=dy!==0?hh/Math.abs(dy):Infinity,s=Math.min(sx,sy);return {x:cx+dx*s,y:cy+dy*s};}
+  function linkEndpoints(a,b,aw,ah,bw,bh){
+    const dx=b.x-a.x,dy=b.y-a.y,hgap=Math.abs(dx)-(aw+bw)/2,vgap=Math.abs(dy)-(ah+bh)/2;
+    // Aim at the middle of facing sides, away from rounded corners and shadows.
+    // Cap clearance for close cards; overlapping cards retain the old boundary fallback.
+    if(hgap>=0&&(vgap<0||hgap>=vgap)){const sign=dx>=0?1:-1,gap=Math.min(10,hgap/4);
+      return [{x:a.x+sign*(aw/2+gap),y:a.y},{x:b.x-sign*(bw/2+gap),y:b.y},'x'];}
+    if(vgap>=0){const sign=dy>=0?1:-1,gap=Math.min(10,vgap/4);
+      return [{x:a.x,y:a.y+sign*(ah/2+gap)},{x:b.x,y:b.y-sign*(bh/2+gap)},'y'];}
+    return [edgePoint(a.x,a.y,aw/2,ah/2,b.x,b.y),edgePoint(b.x,b.y,bw/2,bh/2,a.x,a.y)];
+  }
   function ensureLabel(l){if(!l.label){const e=linkLabelEls.get(l.id);if(e){e.remove();linkLabelEls.delete(l.id);}return null;}
     let e=linkLabelEls.get(l.id);if(!e){e=document.createElement('div');e.className='linklabel';world.appendChild(e);linkLabelEls.set(l.id,e);}e.textContent=l.label;return e;}
   function updateOneLink(l){const a=byId(state.cards,l.from),b=byId(state.cards,l.to),g=linkEls.get(l.id);
     if(!a||!b||!g){if(g){g.querySelector('.lvis').setAttribute('d','');g.querySelector('.lhit').setAttribute('d','');}return;}
     const ea=cardEls.get(a.id),eb=cardEls.get(b.id),ca=cardCenter(a),cb=cardCenter(b);
-    const pa=edgePoint(ca.x,ca.y,ea.offsetWidth/2,ea.offsetHeight/2,cb.x,cb.y);
-    const pb=edgePoint(cb.x,cb.y,eb.offsetWidth/2,eb.offsetHeight/2,ca.x,ca.y);
-    const d=linkPath(pa.x,pa.y,pb.x,pb.y);g.querySelector('.lvis').setAttribute('d',d);g.querySelector('.lhit').setAttribute('d',d);
+    const [pa,pb,axis]=linkEndpoints(ca,cb,ea.offsetWidth,ea.offsetHeight,eb.offsetWidth,eb.offsetHeight);
+    const d=linkPath(pa.x,pa.y,pb.x,pb.y,axis);g.querySelector('.lvis').setAttribute('d',d);g.querySelector('.lhit').setAttribute('d',d);
     const lab=ensureLabel(l);if(lab){lab.style.left=((pa.x+pb.x)/2)+'px';lab.style.top=((pa.y+pb.y)/2)+'px';}}
   function refreshLinks(){state.links.forEach(updateOneLink);}
   function refreshLinksFor(id){state.links.forEach(l=>{if(l.from===id||l.to===id)updateOneLink(l);});}
