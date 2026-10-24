@@ -4,6 +4,8 @@ Flow Plus Phase 1 的使用方式與資料契約見 [docs/flow-plus.md](docs/flo
 
 卡片、圖片、圖示與自由文字的群組操作見 [docs/grouping.md](docs/grouping.md)。
 
+自訂圖示的保存位置與選單操作見 [docs/custom-icons.md](docs/custom-icons.md)。
+
 純前端個人白板。卡片、區塊編輯、連線、標籤、參考圖片、地圖擷取與 AI JSON 收件匣；不包含 AI 模型服務或後端資料庫。
 
 ## 開始使用
