@@ -42,8 +42,8 @@
   .toolbar-more-panel{position:fixed;z-index:75;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;width:300px;max-height:calc(100dvh - 70px);overflow-y:auto;padding:10px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-pop);}
   .toolbar-more-panel[hidden]{display:none;}
   .toolbar-more-panel .toolbar-menu-heading{grid-column:1/-1;padding:7px 6px 2px;color:var(--ink-soft);font-size:11px;font-weight:600;}
-  .toolbar-more-panel button.tb{width:100%;min-height:38px;color:var(--ink);font-size:13px;justify-content:flex-start;white-space:normal;}
-  .toolbar-more-panel button.tb:hover{background:var(--accent-soft);color:var(--accent);}
+  .toolbar-more-panel button.tb{width:100%;min-width:0;min-height:42px;padding:7px 9px;border:1px solid var(--line);background:#fff;color:var(--ink);font-size:12px;justify-content:flex-start;white-space:normal;text-align:left;}
+  .toolbar-more-panel button.tb:hover:not(:disabled){background:var(--accent-soft);border-color:#e8bcc0;color:var(--accent);}
   .toolbar-more-panel button.tb[data-tip]::before{content:attr(data-tip);font-size:12px;}
   .toolbar-more-panel button.tb[data-tip]::after{display:none;}
 
