@@ -59,12 +59,14 @@ window.JuiceCore = (() => {
     assert(d.schemaVersion == null || [1,2,3].includes(d.schemaVersion), '不支援此資料版本');
     const cards=unique(array(d.cards).map(c=>card(c,legacy))), ids=new Set(cards.map(c=>c.id));
     const links=unique(array(d.links,30000).map(l=>{assert(object(l));assert(ids.has(l.from)&&ids.has(l.to), '連線指向不存在的卡片');return {id:id(l.id),from:l.from,to:l.to,dir:['none','to','both'].includes(l.dir)?l.dir:'none',label:text(l.label,10000)};}));
-    const groups=unique(array(d.groups).map(g=>{assert(object(g));return{id:id(g.id),x:num(g.x),y:num(g.y),w:num(g.w,240,1),h:num(g.h,160,1),title:text(g.title,10000)||'群組'};}));
     const images=unique(array(d.images,1000).map(i=>{assert(object(i));return{id:id(i.id),x:num(i.x),y:num(i.y),w:num(i.w,600,1),src:safeImage(i.src),opacity:num(i.opacity,0.55,0,1),layer:i.layer==='above'?'above':'below'};}));
     const icons=unique(array(d.icons,1000).map(i=>{assert(object(i));const src=i.name==='custom'?safeImage(i.src):'';
       const result={id:id(i.id),x:num(i.x),y:num(i.y),name:src?'custom':ICONS.has(i.name)?i.name:'idea',size:num(i.size,44,18,160),layer:i.layer==='below'?'below':'above'};
       if(result.name==='custom')result.src=src;return result;}));
     const notes=unique(array(d.notes,1000).map(n=>{assert(object(n));return{id:id(n.id),x:num(n.x),y:num(n.y),w:num(n.w,280,40,1600),text:text(n.text,10000),size:num(n.size,20,12,72),color:/^#[0-9a-f]{6}$/i.test(n.color||'')?n.color:'#2A3038',layer:n.layer==='below'?'below':'above'};}));
+    const memberIds={card:ids,image:new Set(images.map(i=>i.id)),icon:new Set(icons.map(i=>i.id)),note:new Set(notes.map(n=>n.id))},grouped=new Set();
+    const groups=unique(array(d.groups).map(g=>{assert(object(g));const result={id:id(g.id),x:num(g.x),y:num(g.y),w:num(g.w,240,1),h:num(g.h,160,1),title:text(g.title,10000)||'群組'};
+      if(g.members!=null){const members=array(g.members).map(m=>{assert(object(m)&&Object.hasOwn(memberIds,m.type)&&typeof m.id==='string'&&memberIds[m.type].has(m.id),'群組成員不存在');const key=m.type+':'+m.id;assert(!grouped.has(key),'物件重複加入群組');grouped.add(key);return{type:m.type,id:m.id};});assert(members.length>=2,'群組至少需要兩個物件');result.members=members;}return result;}));
     const v=d.view||{};assert(object(v));
     return {schemaVersion:3,boardId:id(d.boardId),cards,links,groups,images,icons,notes,view:{x:num(v.x),y:num(v.y),zoom:num(v.zoom,1,0.3,2.5)},savedAt:num(d.savedAt,0,0,1e15)};
   }

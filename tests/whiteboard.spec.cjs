@@ -433,6 +433,41 @@ test('marquee selects multiple cards and dragging moves them together',async({pa
   const box=await page.locator('[data-id="one"].card').boundingBox();await rectangle(page,box.x+40,box.y+25,box.x+100,box.y+65);await page.waitForTimeout(500);const data=await stored(page);expect(data.cards.map(c=>[c.x,c.y])).toEqual([[160,140],[460,140],[800,400]]);
   await page.locator('#btnSelect').click();await rectangle(page,700,350,730,380);await page.waitForTimeout(500);expect((await stored(page)).view).toMatchObject({x:30,y:30});
 });
+test('mixed object group moves together, survives reload and can be ungrouped',async({page})=>{
+  await mockDrive(page);await page.addInitScript(()=>{if(sessionStorage.getItem('group-fixture'))return;sessionStorage.setItem('group-fixture','1');localStorage.setItem('sju-whiteboard-v2',JSON.stringify({cards:[{id:'card-a',x:100,y:100,title:'Card A'},{id:'card-b',x:400,y:100,title:'Card B'}],images:[{id:'image-a',x:550,y:250,w:80,opacity:1,layer:'above',src:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5Y2uEAAAAASUVORK5CYII='}],icons:[{id:'icon-a',x:250,y:270,name:'warning',size:44,layer:'above'}],notes:[{id:'note-a',x:400,y:270,w:150,text:'說明',size:20,color:'#2A3038',layer:'above'}],view:{x:0,y:0,zoom:1}}));});
+  await boot(page);await page.locator('#btnSelect').click();await rectangle(page,70,140,680,460);
+  await expect(page.locator('.card.sel')).toHaveCount(2);await expect(page.locator('.imgobj.sel')).toHaveCount(1);await expect(page.locator('.iconobj.sel')).toHaveCount(1);await expect(page.locator('.noteobj.sel')).toHaveCount(1);
+  await clickTool(page,'btnGroup');await expect(page.locator('.group')).toHaveCount(1);await expect(page.locator('#btnSelect')).toHaveAttribute('aria-pressed','false');await page.screenshot({path:'/tmp/juice-object-group.png',animations:'disabled'});await page.waitForTimeout(450);
+  let data=await stored(page);expect(data.groups[0].members).toEqual([{type:'card',id:'card-a'},{type:'card',id:'card-b'},{type:'image',id:'image-a'},{type:'icon',id:'icon-a'},{type:'note',id:'note-a'}]);
+  const title=await page.locator('.gtitle').boundingBox();await rectangle(page,title.x+15,title.y+8,title.x+75,title.y+43);await page.waitForTimeout(450);
+  data=await stored(page);expect(data.cards.map(c=>[c.x,c.y])).toEqual([[160,135],[460,135]]);expect([data.images[0].x,data.images[0].y]).toEqual([610,285]);expect([data.icons[0].x,data.icons[0].y]).toEqual([310,305]);expect([data.notes[0].x,data.notes[0].y]).toEqual([460,305]);
+  await page.locator('#btnUndo').click();await page.waitForTimeout(450);expect((await stored(page)).cards[0].x).toBe(100);
+  await page.locator('#btnRedo').click();await page.waitForTimeout(450);expect((await stored(page)).images[0].x).toBe(610);
+  await page.reload();await page.locator('#homeRouteLocal').click();await page.locator('#homeContinue').click();await expect(page.locator('.group')).toHaveCount(1);
+  await page.getByRole('button',{name:'解開群組 群組'}).click();await expect(page.locator('.group')).toHaveCount(0);await page.waitForTimeout(450);
+  data=await stored(page);expect(data.groups).toEqual([]);expect(data.cards).toHaveLength(2);expect(data.images).toHaveLength(1);expect(data.icons).toHaveLength(1);expect(data.notes).toHaveLength(1);
+});
+test('explicit membership excludes nearby unselected objects',async({page})=>{
+  await mockDrive(page);await page.addInitScript(()=>localStorage.setItem('sju-whiteboard-v2',JSON.stringify({cards:[{id:'chosen',x:100,y:100,title:'Chosen'},{id:'nearby',x:220,y:180,title:'Nearby'}],icons:[{id:'chosen-icon',x:420,y:260,name:'warning',size:44,layer:'above'}],view:{x:0,y:0,zoom:1}})));
+  await boot(page);await page.locator('[data-id="chosen"].card').click();await page.locator('[data-id="chosen-icon"].iconobj').click({modifiers:['Shift']});
+  await expect(page.locator('#btnGroup')).toBeEnabled();await clickTool(page,'btnGroup');await page.waitForTimeout(450);
+  let data=await stored(page);expect(data.groups[0].members).toEqual([{type:'card',id:'chosen'},{type:'icon',id:'chosen-icon'}]);
+  const title=await page.locator('.gtitle').boundingBox();await rectangle(page,title.x+12,title.y+8,title.x+62,title.y+28);await page.waitForTimeout(450);
+  data=await stored(page);expect(data.cards[0].x).toBe(150);expect(data.icons[0].x).toBe(470);expect(data.cards[1].x).toBe(220);
+  const card=await page.locator('[data-id="chosen"].card').boundingBox();await rectangle(page,card.x+30,card.y+25,card.x+60,card.y+35);await page.waitForTimeout(450);
+  data=await stored(page);expect(data.cards[0].x).toBe(180);expect(data.icons[0].x).toBe(500);expect(data.cards[1].x).toBe(220);
+  await page.locator('[data-id="chosen"].card').click({modifiers:['Shift']});await page.keyboard.press('Delete');await page.waitForTimeout(450);
+  data=await stored(page);expect(data.groups).toHaveLength(0);expect(data.cards.map(c=>c.id)).toEqual(['nearby']);expect(data.icons[0].id).toBe('chosen-icon');
+});
+test('group normalization preserves legacy frames and rejects missing or duplicate members',async({page})=>{
+  await mockDrive(page);await boot(page);const checks=await page.evaluate(()=>{
+    const base={cards:[{id:'a',title:'A'},{id:'b',title:'B'}],groups:[{id:'g',x:0,y:0,w:300,h:200,title:'舊群組'}]},legacy=JuiceCore.normalize(base);
+    const invalid=[{type:'card',id:'a'},{type:'icon',id:'missing'}],duplicate=[{type:'card',id:'a'},{type:'card',id:'a'}];
+    const rejected=members=>{try{JuiceCore.normalize({...base,groups:[{...base.groups[0],members}]});return false;}catch(e){return true;}};
+    return{legacy:legacy.groups[0],missing:rejected(invalid),duplicate:rejected(duplicate)};
+  });
+  expect(checks.legacy).toMatchObject({title:'舊群組',w:300,h:200});expect(checks.legacy.members).toBeUndefined();expect(checks.missing).toBe(true);expect(checks.duplicate).toBe(true);
+});
 test('Shift drag supports reverse selection and adding to the selection',async({page})=>{
   await selectionBoard(page);await page.keyboard.down('Shift');await rectangle(page,350,300,80,132);await page.keyboard.up('Shift');await expect(page.locator('.card.sel')).toHaveCount(1);
   await page.keyboard.down('Shift');await rectangle(page,380,300,660,145);await page.keyboard.up('Shift');await expect(page.locator('.card.sel')).toHaveCount(2);await expect(page.locator('#btnSelect')).toHaveAttribute('aria-pressed','false');
