@@ -40,6 +40,31 @@ window.JuicePeleFlow = (() => {
     element.replaceChildren(document.importNode(root, true));
   }
 
+  function colorFlowLanes(element, mermaid) {
+    const laneIds = [...mermaid.matchAll(/^\s*subgraph\s+([A-Za-z_][A-Za-z0-9_]*)\s*\[[^\]\n]+\]\s*$/gm)].map(match => match[1]);
+    if (!laneIds.length) return;
+    const colors = [
+      { fill: '#d4ecdc', border: '#8caf98', text: '#355b44' },
+      { fill: '#dce8fa', border: '#9db5d8', text: '#344f79' }
+    ];
+    element.querySelectorAll('svg.pele-flowchart .pele-cluster[data-id]').forEach(cluster => {
+      const index = laneIds.indexOf(cluster.getAttribute('data-id'));
+      const shape = cluster.querySelector('rect');
+      if (index < 0 || !shape || shape.style.fill || shape.style.stroke) return;
+      const color = colors[index % colors.length];
+      cluster.style.setProperty('--_a', color.fill);
+      cluster.style.setProperty('--_b', color.border);
+      cluster.style.setProperty('--_m', color.text);
+      if (shape.getAttribute('fill-opacity') === '0.5') shape.setAttribute('fill-opacity', '0.8');
+    });
+    element.querySelectorAll('svg.pele-flowchart .pele-node.pele-shape-diam, svg.pele-flowchart .pele-node.pele-shape-rounded').forEach(node => {
+      const shape = node.querySelector('rect,polygon,path');
+      if (!shape || shape.style.fill || shape.style.stroke) return;
+      node.style.setProperty('--_s', node.classList.contains('pele-shape-diam') ? '#fff5df' : '#eaf3ee');
+      node.style.setProperty('--_b', node.classList.contains('pele-shape-diam') ? '#b48036' : '#9cbaa7');
+    });
+  }
+
   function draw(element, mermaid) {
     if (!element) return false;
     element.replaceChildren();
@@ -62,6 +87,7 @@ window.JuicePeleFlow = (() => {
         limit: MAX_SOURCE_LENGTH, maxEdges: 400, outputLimit: MAX_SVG_LENGTH
       });
       appendSafeSvg(element, svg);
+      colorFlowLanes(element, mermaid);
       return true;
     } catch (error) {
       // Never place a parser error (which may contain user input) into innerHTML.
