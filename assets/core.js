@@ -49,7 +49,7 @@ window.JuiceCore = (() => {
     else if(c.text){const lines=text(c.text).split('\n');title=title||(lines.shift()||'').slice(0,120);blocks=lines.filter(line=>line.trim()).map(line=>{const el=document.createElement('div');el.textContent=line;return block({html:el.innerHTML});});}
     if(!blocks || !blocks.length)blocks=[block({})];
     const result={id:id(c.id),x:num(c.x),y:num(c.y),color:COLORS.has(c.color)?c.color:'paper',shape:['note','rect','pill'].includes(c.shape)?c.shape:'note',title,blocks,tags:array(c.tags,100).map(t=>text(t,200)),collapsed:!!c.collapsed,createdAt:num(c.createdAt,Date.now(),0,1e15),updatedAt:num(c.updatedAt,c.createdAt||Date.now(),0,1e15)};
-    if(c.w != null)result.w=num(c.w,240,180,960);
+    if(c.w != null)result.w=num(c.w,240,180,1200);
     if(c.z != null)result.z=num(c.z,0,-100000,100000);
     if(c.sourceInbox)result.sourceInbox=text(c.sourceInbox,300);
     return result;
