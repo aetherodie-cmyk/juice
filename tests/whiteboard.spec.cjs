@@ -78,6 +78,15 @@ test('flow studio, flow card sizing and layered icons persist safely',async({pag
   await clickTool(page,'btnIcon');await page.locator('#iconPalette').getByTitle('warning').click();await expect(page.locator('.iconobj')).toHaveCount(1);await page.locator('#iconLayer').selectOption('below');await page.waitForTimeout(500);
   const data=await stored(page);expect(data.cards[0].w).toBe(360);expect(data.icons[0]).toMatchObject({name:'warning',layer:'below',size:44});
 });
+test('1200 px flow cards survive local save and reload',async({page})=>{
+  await mockDrive(page);await mockPele(page);await boot(page);
+  await page.locator('#btnFlow').click();await page.locator('.flow-studio-open').click();
+  await page.getByRole('combobox',{name:'流程圖寬度'}).selectOption('1200');
+  await page.locator('#flowStudio header button').click();await expect(page.locator('.card')).toHaveCSS('width','1200px');
+  await page.waitForTimeout(500);expect((await stored(page)).cards[0].w).toBe(1200);
+  await page.reload();await page.locator('#homeRouteLocal').click();await page.locator('#homeContinue').click();
+  await expect(page.locator('.card')).toHaveCSS('width','1200px');await expect(page.locator('.ctitle')).toHaveText('新流程圖');
+});
 test('expanded icon picker and clipboard screenshot paste preserve image layer',async({page,context})=>{
   await mockDrive(page);await context.grantPermissions(['clipboard-read','clipboard-write']);await boot(page);
   await clickTool(page,'btnIcon');const palette=page.locator('#iconPalette');
