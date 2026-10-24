@@ -74,6 +74,11 @@ test('graph editing keeps source visible and synchronizes both ways',async({page
   await mockDrive(page);await mockPele(page);await boot(page);await page.locator('#btnFlow').click();await page.locator('.flow-studio-open').click();await page.getByRole('button',{name:'圖形拖拉工具',exact:true}).click();
   const source=page.locator('#flowStudio textarea');await expect(source).toBeVisible();await source.fill('flowchart TD\nA[原始文字] --> B[下一步]\nstyle A fill:#ffeeaa');await expect(page.locator('.fb-node')).toHaveCount(2);await expect(page.locator('.fb-node').first()).toHaveText('原始文字');await page.locator('[data-add="rect"]').click();await expect(source).toHaveValue(/style A fill:#ffeeaa/);await expect(source).toHaveValue(/flowchart TD/);await expect(source).toHaveValue(/新步驟/);
 });
+test('flow node rename and delete work and card actions use context menus',async({page})=>{
+ await mockDrive(page);await mockPele(page);await boot(page);await page.locator('#btnFlow').click();await page.locator('.flow-studio-open').click();await page.getByRole('button',{name:'圖形拖拉工具',exact:true}).click();
+ await expect(page.locator('[data-delete]')).toBeDisabled();page.once('dialog',d=>d.accept('已修改的節點'));await page.locator('.fb-node').first().dblclick();await expect(page.locator('#flowStudio textarea')).toHaveValue(/已修改的節點/);await page.locator('.fb-node').first().click();await page.locator('[data-delete]').click();await expect(page.locator('.fb-node')).toHaveCount(3);
+ await page.locator('#flowStudio header button').click();await page.locator('#pClose').click();await page.locator('.card').click({button:'right'});await expect(page.locator('.bmenu')).toContainText('移到最上層');await expect(page.locator('#btnFront')).toBeHidden();
+});
 test('diagram blocks survive JSON import, legacy normalization and Drive round trips',async({page})=>{
   const api=await mockDrive(page);await mockPele(page);await boot(page);
   const imported={schemaVersion:3,cards:[{id:'flow',x:30,y:40,title:'Imported flow',blocks:[{id:'diagram-block',type:'diagram',html:'flowchart LR\nA --&gt; B'}],tags:[]}],links:[],groups:[],images:[],view:{x:0,y:0,zoom:1}};
