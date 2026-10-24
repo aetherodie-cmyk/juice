@@ -52,6 +52,8 @@
   #canvas.panning{cursor:grabbing;} #canvas.linking{cursor:crosshair;}
   #world{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform;}
   #linkLayer{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none;z-index:2;}
+  #linkTips{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none;z-index:2147483646;}
+  #linkTips .ltip{fill:none;stroke:var(--link);stroke-width:2;pointer-events:none;}
   #linkLayer path.lvis{fill:none;stroke:var(--link);stroke-width:2;}
   #linkLayer path.lhit{fill:none;stroke:transparent;stroke-width:18;pointer-events:stroke;cursor:pointer;}
   #linkLayer g.sel path.lvis{stroke:var(--accent);stroke-width:2.6;}

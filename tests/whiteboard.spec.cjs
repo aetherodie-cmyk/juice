@@ -671,13 +671,21 @@ test('native card arrows stay outside facing sides with clear directional marker
       start:{x:start.x,y:start.y},end:{x:end.x,y:end.y},
       startMarker:path.getAttribute('marker-start'),endMarker:path.getAttribute('marker-end')};}));
   const paths=await inspect(),map=Object.fromEntries(paths.map(p=>[p.id,p]));
-  expect(map.forward.start.x).toBe(250);expect(map.forward.end.x).toBe(490);
-  expect(map.reverse.start.x).toBe(490);expect(map.reverse.end.x).toBe(250);
-  expect(map.vertical.start.y).toBeGreaterThan(140);expect(map.vertical.end.y).toBe(300);
-  expect(map.close.start.x).toBe(245);expect(map.close.end.x).toBe(255);
+  expect(map.forward.start.x).toBe(241);expect(map.forward.end.x).toBe(499);
+  expect(map.reverse.start.x).toBe(499);expect(map.reverse.end.x).toBe(241);
+  expect(map.vertical.start.y).toBeGreaterThan(140);expect(map.vertical.end.y).toBe(309);
+  expect(map.close.start.x).toBe(241);expect(map.close.end.x).toBe(259);
   expect(map.forward.endMarker).toBe('url(#arrowhead)');expect(map.forward.startMarker).toBeNull();
   expect(map.reverse.startMarker).toBe('url(#arrowstart)');expect(map.reverse.endMarker).toBe('url(#arrowhead)');
   expect(map.close.startMarker).toBeNull();expect(map.close.endMarker).toBeNull();
   await page.locator('#btnZoomOut').click();expect(await inspect()).toEqual(paths);
   const saved=await stored(page);expect(saved.links).toEqual(data.links.map(l=>({label:'',...l})));
+  const overlay=await page.locator('#linkTips').evaluate(el=>({z:+getComputedStyle(el).zIndex,pointer:getComputedStyle(el).pointerEvents}));
+  expect(overlay.z).toBeGreaterThan(10000);expect(overlay.pointer).toBe('none');
+  await expect(page.locator('#linkTips g')).toHaveCount(4);
+  await expect(page.locator('#linkTips [data-link-id="forward"] .end')).toHaveAttribute('marker-end','url(#arrowhead)');
+  await page.locator('.card[data-id="a"]').click();await page.keyboard.press('Delete');
+  await expect(page.locator('#linkTips g')).toHaveCount(3);
+  await expect(page.locator('#linkTips [data-link-id="forward"]')).toHaveCount(0);
+  await page.locator('#btnUndo').click();await expect(page.locator('#linkTips g')).toHaveCount(4);
 });

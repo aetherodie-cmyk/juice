@@ -17,7 +17,7 @@
   let selection=new Set(), extraSelection=new Set(), selectedGroup=null, openCardId=null, storageOK=true;
 
   const $=id=>document.getElementById(id);
-  const canvas=$('canvas'),world=$('world'),linkSvg=$('linkLayer'),cardbar=$('cardbar'),hint=$('hint'),banner=$('banner'),statusEl=$('statusText'),zoomEl=$('zoomLevel'),panel=$('panel');
+  const canvas=$('canvas'),world=$('world'),linkSvg=$('linkLayer'),linkTips=$('linkTips'),cardbar=$('cardbar'),hint=$('hint'),banner=$('banner'),statusEl=$('statusText'),zoomEl=$('zoomLevel'),panel=$('panel');
   const cardEls=new Map(),linkEls=new Map(),groupEls=new Map(),imageEls=new Map(),iconEls=new Map(),noteEls=new Map(),linkLabelEls=new Map();
   let selectedImage=null, selectedIcon=null, selectedNote=null, bgEdit=false, selectedLink=null, syncHandle=null, syncReady=false, lastRead=0;
   const uid=Core.uid;
@@ -365,7 +365,7 @@
     const wx=(cx-state.view.x)/state.view.zoom,wy=(cy-state.view.y)/state.view.zoom;state.view.zoom=nz;state.view.x=cx-wx*nz;state.view.y=cy-wy*nz;applyView();scheduleSave();}
 
   // ---------- build ----------
-  function buildScene(){cardEls.forEach(e=>e.remove());cardEls.clear();groupEls.forEach(e=>e.remove());groupEls.clear();imageEls.forEach(e=>e.remove());imageEls.clear();iconEls.forEach(e=>e.remove());iconEls.clear();noteEls.forEach(e=>e.remove());noteEls.clear();linkEls.forEach(g=>g.remove());linkEls.clear();linkLabelEls.forEach(e=>e.remove());linkLabelEls.clear();
+  function buildScene(){cardEls.forEach(e=>e.remove());cardEls.clear();groupEls.forEach(e=>e.remove());groupEls.clear();imageEls.forEach(e=>e.remove());imageEls.clear();iconEls.forEach(e=>e.remove());iconEls.clear();noteEls.forEach(e=>e.remove());noteEls.clear();linkEls.forEach(g=>{g.remove();g._tips?.remove();});linkEls.clear();linkLabelEls.forEach(e=>e.remove());linkLabelEls.clear();
     state.images.forEach(makeImageEl);applyBgEdit();updateBgBtn();
     state.groups.forEach(makeGroupEl);state.links.forEach(makeLinkEl);state.cards.forEach(makeCardEl);state.icons.forEach(makeIconEl);state.notes.forEach(makeNoteEl);refreshLinks();applyView();updateHint();updateGroupBtn();}
   const updateHint=()=>{hint.style.display=state.cards.length?'none':'flex';};
@@ -453,16 +453,24 @@
 
   // ---------- links ----------
   const SVGNS='http://www.w3.org/2000/svg';
+  function removeLinkEl(id){const g=linkEls.get(id);g?._tips?.remove();g?.remove();linkEls.delete(id);}
   function makeLinkEl(l){const g=document.createElementNS(SVGNS,'g');g.dataset.id=l.id;
     const hit=document.createElementNS(SVGNS,'path');hit.setAttribute('class','lhit');
     const vis=document.createElementNS(SVGNS,'path');vis.setAttribute('class','lvis');
     g.appendChild(hit);g.appendChild(vis);linkSvg.appendChild(g);linkEls.set(l.id,g);
+    const tips=document.createElementNS(SVGNS,'g');tips.dataset.linkId=l.id;g._tips=tips;
+    for(const part of ['start','end']){const path=document.createElementNS(SVGNS,'path');path.setAttribute('class','ltip '+part);tips.appendChild(path);}linkTips.appendChild(tips);
     hit.addEventListener('pointerdown',e=>{e.stopPropagation();selectLink(l.id);});
     applyLinkDir(l);return g;}
   function applyLinkDir(l){const g=linkEls.get(l.id);if(!g)return;const vis=g.querySelector('.lvis');
     vis.removeAttribute('marker-end');vis.removeAttribute('marker-start');
     if(l.dir==='to'||l.dir==='both')vis.setAttribute('marker-end','url(#arrowhead)');
-    if(l.dir==='both')vis.setAttribute('marker-start','url(#arrowstart)');}
+    if(l.dir==='both')vis.setAttribute('marker-start','url(#arrowstart)');
+    const start=g._tips.querySelector('.start'),end=g._tips.querySelector('.end');
+    start.removeAttribute('marker-start');end.removeAttribute('marker-end');
+    if(l.dir==='both')start.setAttribute('marker-start','url(#arrowstart)');
+    if(l.dir==='to'||l.dir==='both')end.setAttribute('marker-end','url(#arrowhead)');
+    start.style.display=l.dir==='both'?'':'none';end.style.display=l.dir==='to'||l.dir==='both'?'':'none';}
   function linkPath(x1,y1,x2,y2,axis){const adx=Math.abs(x2-x1),ady=Math.abs(y2-y1);
     if(axis==='y'||(!axis&&ady>=adx)){const d=Math.min(ady/2,Math.max(40,ady*0.4));return `M ${x1} ${y1} C ${x1} ${y1+(y2>y1?d:-d)}, ${x2} ${y2-(y2>y1?d:-d)}, ${x2} ${y2}`;}
     const d=Math.min(adx/2,Math.max(40,adx*0.4));return `M ${x1} ${y1} C ${x1+(x2>x1?d:-d)} ${y1}, ${x2-(x2>x1?d:-d)} ${y2}, ${x2} ${y2}`;}
@@ -470,11 +478,11 @@
     const sx=dx!==0?hw/Math.abs(dx):Infinity,sy=dy!==0?hh/Math.abs(dy):Infinity,s=Math.min(sx,sy);return {x:cx+dx*s,y:cy+dy*s};}
   function linkEndpoints(a,b,aw,ah,bw,bh){
     const dx=b.x-a.x,dy=b.y-a.y,hgap=Math.abs(dx)-(aw+bw)/2,vgap=Math.abs(dy)-(ah+bh)/2;
-    // Aim at the middle of facing sides, away from rounded corners and shadows.
+    // Aim at the middle of facing sides, away from rounded corners. Tips paint above shadows in their own non-interactive layer.
     // Cap clearance for close cards; overlapping cards retain the old boundary fallback.
-    if(hgap>=0&&(vgap<0||hgap>=vgap)){const sign=dx>=0?1:-1,gap=Math.min(10,hgap/4);
+    if(hgap>=0&&(vgap<0||hgap>=vgap)){const sign=dx>=0?1:-1,gap=Math.min(1,hgap/4);
       return [{x:a.x+sign*(aw/2+gap),y:a.y},{x:b.x-sign*(bw/2+gap),y:b.y},'x'];}
-    if(vgap>=0){const sign=dy>=0?1:-1,gap=Math.min(10,vgap/4);
+    if(vgap>=0){const sign=dy>=0?1:-1,gap=Math.min(1,vgap/4);
       return [{x:a.x,y:a.y+sign*(ah/2+gap)},{x:b.x,y:b.y-sign*(bh/2+gap)},'y'];}
     return [edgePoint(a.x,a.y,aw/2,ah/2,b.x,b.y),edgePoint(b.x,b.y,bw/2,bh/2,a.x,a.y)];
   }
@@ -485,6 +493,9 @@
     const ea=cardEls.get(a.id),eb=cardEls.get(b.id),ca=cardCenter(a),cb=cardCenter(b);
     const [pa,pb,axis]=linkEndpoints(ca,cb,ea.offsetWidth,ea.offsetHeight,eb.offsetWidth,eb.offsetHeight);
     const d=linkPath(pa.x,pa.y,pb.x,pb.y,axis);g.querySelector('.lvis').setAttribute('d',d);g.querySelector('.lhit').setAttribute('d',d);
+    const path=g.querySelector('.lvis'),length=path.getTotalLength(),span=Math.min(18,length/2);
+    for(const part of ['start','end']){const from=part==='start'?0:length-span,to=part==='start'?span:length;let segment='';
+      for(let i=0;i<=8;i++){const p=path.getPointAtLength(from+(to-from)*i/8);segment+=(i?' L ':'M ')+p.x+' '+p.y;}g._tips.querySelector('.'+part).setAttribute('d',segment);}
     const lab=ensureLabel(l);if(lab){lab.style.left=((pa.x+pb.x)/2)+'px';lab.style.top=((pa.y+pb.y)/2)+'px';}}
   function refreshLinks(){state.links.forEach(updateOneLink);}
   function refreshLinksFor(id){state.links.forEach(l=>{if(l.from===id||l.to===id)updateOneLink(l);});}
@@ -497,7 +508,7 @@
     bar.querySelector('.lbl').value=l.label||'';bar.style.left=(sx-bar.offsetWidth/2)+'px';bar.style.top=Math.max(58,sy-bar.offsetHeight-14)+'px';}
   function hideLinkbar(){$('linkbar').style.display='none';}
   const deleteLink=(id)=>destructive(()=>deleteLinkNow(id));
-  function deleteLinkNow(id){state.links=state.links.filter(l=>l.id!==id);linkEls.get(id)?.remove();linkEls.delete(id);
+  function deleteLinkNow(id){state.links=state.links.filter(l=>l.id!==id);removeLinkEl(id);
     const e=linkLabelEls.get(id);if(e){e.remove();linkLabelEls.delete(id);}if(selectedLink===id){selectedLink=null;hideLinkbar();}
     if(openCardId)renderConn(curCard());scheduleSave();}
   $('linkbar').querySelectorAll('.dirb').forEach(btn=>btn.addEventListener('click',()=>{const l=byId(state.links,selectedLink);if(!l)return;l.dir=btn.dataset.dir;applyLinkDir(l);
@@ -572,7 +583,7 @@
   const deleteSelection=()=>destructive(()=>deleteSelectionNow());
   function deleteSelectionNow(){if(selectedGroup){ungroupGroup(selectedGroup);return;}
     selection.forEach(id=>{if(id===openCardId)closePanel();state.cards=state.cards.filter(c=>c.id!==id);
-      state.links=state.links.filter(l=>{const keep=l.from!==id&&l.to!==id;if(!keep){linkEls.get(l.id)?.remove();linkEls.delete(l.id);const le=linkLabelEls.get(l.id);if(le){le.remove();linkLabelEls.delete(l.id);}}return keep;});
+      state.links=state.links.filter(l=>{const keep=l.from!==id&&l.to!==id;if(!keep){removeLinkEl(l.id);const le=linkLabelEls.get(l.id);if(le){le.remove();linkLabelEls.delete(l.id);}}return keep;});
       cardEls.get(id)?.remove();cardEls.delete(id);removeMemberFromGroups('card',id);});clearSelection();updateHint();refreshLinks();scheduleSave();}
   function ungroupGroup(id){state.groups=state.groups.filter(g=>g.id!==id);groupEls.get(id)?.remove();groupEls.delete(id);if(selectedGroup===id)selectedGroup=null;scheduleSave();}
   function removeMemberFromGroups(type,id){state.groups.slice().forEach(g=>{if(!g.members)return;g.members=g.members.filter(m=>m.type!==type||m.id!==id);if(g.members.length<2){state.groups=state.groups.filter(other=>other!==g);groupEls.get(g.id)?.remove();groupEls.delete(g.id);if(selectedGroup===g.id)selectedGroup=null;}});}
