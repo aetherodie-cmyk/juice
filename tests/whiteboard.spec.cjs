@@ -35,6 +35,7 @@ async function boot(page,{showHome=false}={}){const errors=[];page.appErrors=err
 async function openBoard(page,name='Board A'){await page.locator('#btnDrive').click();await expect(page.locator('.drv-board-name').first()).toBeVisible();await page.locator('.drv-board-name').filter({hasText:name}).click();await expect(page.locator('#boardName')).toHaveText('· '+name);}
 async function editTitle(page,title){await page.locator('.card').first().dblclick();await page.locator('#pTitle').fill(title);await page.locator('#pClose').click();}
 async function stored(page){return page.evaluate(()=>JSON.parse(localStorage.getItem('sju-whiteboard-v2')));}
+async function clickTool(page,id){const button=page.locator('#'+id);if(!await button.isVisible())await page.locator('#btnToolsMore').click();await button.click();}
 
 test('create, edit, reload and legacy entry share the same app',async({page})=>{
   await mockDrive(page);const errors=await boot(page);await page.locator('#btnAdd').click();await page.locator('#pTitle').fill('Local board');await page.locator('#pClose').click();await page.waitForTimeout(500);
@@ -62,12 +63,12 @@ test('flow studio, flow card sizing and layered icons persist safely',async({pag
   await page.locator('.flow-tools').getByText('小',{exact:true}).click();await expect(page.locator('.card')).toHaveCSS('width','360px');
   await page.locator('.flow-studio-open').click();await expect(page.locator('#flowStudio')).toHaveClass(/open/);await expect(page.locator('.fb-node').first()).toBeVisible();await page.locator('#flowStudio header button').click();await expect(page.locator('#flowStudio')).not.toHaveClass(/open/);
   await page.locator('.flow-studio-open').click();page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'圖形拖拉工具',exact:true}).click();await expect(page.locator('.fb-node')).toHaveCount(4);await page.locator('[data-add="rect"]').click();await expect(page.locator('.fb-node')).toHaveCount(5);await page.locator('#flowStudio header button').click();
-  await page.locator('#btnIcon').click();await page.locator('#iconPalette').getByTitle('warning').click();await expect(page.locator('.iconobj')).toHaveCount(1);await page.locator('#iconLayer').selectOption('below');await page.waitForTimeout(500);
+  await clickTool(page,'btnIcon');await page.locator('#iconPalette').getByTitle('warning').click();await expect(page.locator('.iconobj')).toHaveCount(1);await page.locator('#iconLayer').selectOption('below');await page.waitForTimeout(500);
   const data=await stored(page);expect(data.cards[0].w).toBe(360);expect(data.icons[0]).toMatchObject({name:'warning',layer:'below',size:44});
 });
 test('expanded icon picker and clipboard screenshot paste preserve image layer',async({page,context})=>{
   await mockDrive(page);await context.grantPermissions(['clipboard-read','clipboard-write']);await boot(page);
-  await page.locator('#btnIcon').click();const palette=page.locator('#iconPalette');
+  await clickTool(page,'btnIcon');const palette=page.locator('#iconPalette');
   await expect(palette.getByRole('searchbox',{name:'搜尋圖示'})).toBeVisible();
   await palette.getByRole('searchbox',{name:'搜尋圖示'}).fill('倉庫');
   await expect(palette.getByTitle('warehouse')).toBeVisible();await expect(palette.getByTitle('warning')).toBeHidden();
@@ -87,8 +88,20 @@ test('expanded icon picker and clipboard screenshot paste preserve image layer',
   await page.reload();await page.locator('#homeRouteLocal').click();await page.locator('#homeContinue').click();
   await expect(page.locator('.imgobj.above')).toHaveCount(1);
 });
+test('uploaded transparent custom icon survives save and reload',async({page})=>{
+  await page.setViewportSize({width:900,height:800});await mockDrive(page);await boot(page);await expect(page.locator('#btnIcon')).toBeHidden();
+  await clickTool(page,'btnIcon');await expect(page.locator('#iconPalette')).toBeVisible();
+  const dataUrl=await page.evaluate(()=>{const canvas=document.createElement('canvas');canvas.width=2;canvas.height=2;canvas.getContext('2d').fillRect(0,0,1,1);return canvas.toDataURL('image/png');});
+  const chooser=page.waitForEvent('filechooser');await page.locator('#iconPalette').getByRole('button',{name:'上傳自訂 PNG／WebP 圖示'}).click();
+  await (await chooser).setFiles({name:'my-icon.png',mimeType:'image/png',buffer:Buffer.from(dataUrl.split(',')[1],'base64')});
+  await expect(page.locator('.iconobj img')).toHaveCount(1);await page.waitForTimeout(500);
+  const saved=await stored(page);expect(saved.icons[0]).toMatchObject({name:'custom',layer:'above'});expect(saved.icons[0].src).toMatch(/^data:image\/png;base64,/);
+  expect((await page.evaluate(icon=>JuiceCore.normalize({...JSON.parse(localStorage.getItem('sju-whiteboard-v2')),icons:[icon]}).icons[0],saved.icons[0])).src).toBe(saved.icons[0].src);
+  await page.reload();await page.locator('#homeRouteLocal').click();await page.locator('#homeContinue').click();await expect(page.locator('.iconobj img')).toHaveCount(1);
+  const alpha=await page.locator('.iconobj img').evaluate(async image=>{await image.decode();const canvas=document.createElement('canvas');canvas.width=2;canvas.height=2;canvas.getContext('2d').drawImage(image,0,0);return canvas.getContext('2d').getImageData(1,1,1,1).data[3];});expect(alpha).toBe(0);
+});
 test('free-position text persists with its appearance and layer',async({page})=>{
-  await mockDrive(page);await boot(page);await page.locator('#btnText').click();await expect(page.locator('.noteobj')).toHaveText('輸入文字');
+  await mockDrive(page);await boot(page);await clickTool(page,'btnText');await expect(page.locator('.noteobj')).toHaveText('輸入文字');
   await page.locator('.noteobj').fill('白板標註');await page.locator('#noteSize').fill('28');await page.locator('#noteColor').fill('#c5403b');await page.locator('#noteLayer').selectOption('below');await page.waitForTimeout(500);
   expect((await stored(page)).notes[0]).toMatchObject({text:'白板標註',size:28,color:'#c5403b',layer:'below'});
 });
@@ -172,7 +185,7 @@ test('schema rejects invalid dimensions, duplicate IDs, bad references and activ
 });
 test('approved inbox card remains pending when destination save fails; retry does not duplicate',async({page})=>{
   const api=await mockDrive(page);api.files.ia=JSON.stringify({version:1,inbox:[{id:'incoming1',title:'AI item',blocks:[{id:'incomingblock',type:'text',html:'AI text'}]}]});
-  await boot(page);await openBoard(page);await page.locator('#btnInbox').click();await expect(page.locator('.ib-ok')).toBeVisible();api.writeStatus=403;await page.locator('.ib-ok').click();await expect(page.locator('#banner')).toContainText('待審卡已保留');expect(JSON.parse(api.files.ia).inbox).toHaveLength(1);
+  await boot(page);await openBoard(page);await clickTool(page,'btnInbox');await expect(page.locator('.ib-ok')).toBeVisible();api.writeStatus=403;await page.locator('.ib-ok').click();await expect(page.locator('#banner')).toContainText('待審卡已保留');expect(JSON.parse(api.files.ia).inbox).toHaveLength(1);
   api.writeStatus=200;await page.locator('.ib-ok').click();await expect(page.locator('.ib-ok')).toHaveCount(0);expect(JSON.parse(api.files.a).cards.filter(c=>c.title==='AI item')).toHaveLength(1);expect(JSON.parse(api.files.ia).inbox).toHaveLength(0);
 });
 test('import creates a detached local board and backs up the former Drive board',async({page})=>{
@@ -186,7 +199,7 @@ async function mockLocalFile(page,initial){
     window.showOpenFilePicker=async()=>[await ready];window.showSaveFilePicker=async()=>await ready;
   },initial);
 }
-async function chooseSync(page,label){await page.locator('#btnSync').click();await page.locator('.bmenu').getByText(label,{exact:true}).click();}
+async function chooseSync(page,label){await clickTool(page,'btnSync');await page.locator('.bmenu').getByText(label,{exact:true}).click();}
 
 test('local file conflict preserves local edits and never overwrites external changes',async({page})=>{
   await mockDrive(page);await mockLocalFile(page,JSON.stringify(empty('File board')));await boot(page);await chooseSync(page,'連結現有同步檔');await expect(page.locator('#banner')).toContainText('已載入同步檔');await editTitle(page,'Unsynced local');
@@ -208,7 +221,7 @@ test('412 conditional update stops overwrite and exposes conflict',async({page})
 });
 test('new inbox arrivals during approval survive the inbox update',async({page})=>{
   const api=await mockDrive(page);api.files.ia=JSON.stringify({version:1,inbox:[{id:'first',title:'First',blocks:[]}]});
-  await boot(page);await openBoard(page);await page.locator('#btnInbox').click();
+  await boot(page);await openBoard(page);await clickTool(page,'btnInbox');
   await page.route('https://www.googleapis.com/upload/drive/v3/files/a?uploadType=media',async route=>{
     api.files.a=route.request().postData();const data=JSON.parse(api.files.ia);data.inbox.push({id:'second',title:'New arrival',blocks:[]});api.files.ia=JSON.stringify(data);await route.fulfill({status:200,body:'{}'});
   });
@@ -234,11 +247,11 @@ test('Drive lists all pages of board results',async({page})=>{
 });
 test('deletion creates a downloadable recovery board',async({page})=>{
   await mockDrive(page);await boot(page);await page.locator('#btnAdd').click();await page.locator('#pTitle').fill('Before delete');await page.locator('#pDelete').click();await expect(page.locator('.card')).toHaveCount(0);
-  await page.locator('#btnRecovery').click();const download=page.waitForEvent('download');await page.locator('.bmenu .mi').first().click();expect((await download).suggestedFilename()).toMatch(/^whiteboard-recovered-/);expect((await page.evaluate(()=>JuiceCore.backups())).some(s=>s.value.cards?.[0]?.title==='Before delete')).toBe(true);
+  await clickTool(page,'btnRecovery');const download=page.waitForEvent('download');await page.locator('.bmenu .mi').first().click();expect((await download).suggestedFilename()).toMatch(/^whiteboard-recovered-/);expect((await page.evaluate(()=>JuiceCore.backups())).some(s=>s.value.cards?.[0]?.title==='Before delete')).toBe(true);
 });
 
 test('local inbox uses a persistent source ID and saves the board before removing the item',async({page})=>{
-  await mockDrive(page);await mockLocalFile(page,JSON.stringify({version:1,inbox:[{id:'local-item',title:'Local AI',blocks:[]}]}));await boot(page);await page.locator('#btnInbox').click();await page.locator('#ibLink').click();await expect(page.locator('.ib-ok')).toBeVisible();await page.locator('.ib-ok').click();await expect(page.locator('.ib-ok')).toHaveCount(0);
+  await mockDrive(page);await mockLocalFile(page,JSON.stringify({version:1,inbox:[{id:'local-item',title:'Local AI',blocks:[]}]}));await boot(page);await clickTool(page,'btnInbox');await page.locator('#ibLink').click();await expect(page.locator('.ib-ok')).toBeVisible();await page.locator('.ib-ok').click();await expect(page.locator('.ib-ok')).toHaveCount(0);
   const board=await stored(page);expect(board.cards[0].title).toBe('Local AI');expect(board.cards[0].sourceInbox).toMatch(/^file:[a-f0-9-]+:local-item$/);expect(await page.evaluate(async()=>JSON.parse(await(await testHandle.getFile()).text()).inbox)).toEqual([]);
 });
 test('legacy text and rich HTML migrate without active attributes',async({page})=>{

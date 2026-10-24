@@ -76,6 +76,14 @@
     button.title=button.dataset.tip;
     if(!button.textContent.trim()){const label=document.createElement('span');label.className='mobile-action-label';label.textContent=button.dataset.tip;button.append(label);}
   });
+  function setToolbarMore(open){
+    const panel=$('toolbarMorePanel'),toggle=$('btnToolsMore');open=!!open&&!isMobile();panel.hidden=!open;$('toolbar').classList.toggle('tools-open',open);toggle.setAttribute('aria-expanded',String(open));
+    if(open){const rect=toggle.getBoundingClientRect();panel.style.top=Math.round(rect.bottom+8)+'px';panel.style.left=Math.round(Math.max(8,Math.min(rect.left,innerWidth-panel.offsetWidth-8)))+'px';}
+  }
+  $('btnToolsMore').addEventListener('click',()=>setToolbarMore($('toolbarMorePanel').hidden));
+  $('toolbarMorePanel').addEventListener('click',event=>{if(event.target.closest('button'))setToolbarMore(false);});
+  document.addEventListener('pointerdown',event=>{if(!$('toolbarMore').contains(event.target))setToolbarMore(false);});
+  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!$('toolbarMorePanel').hidden){setToolbarMore(false);$('btnToolsMore').focus();}});
   function setMobileMore(open){
     open=!!open&&isMobile();document.body.classList.toggle('mobile-more-open',open);$('mobileMoreBackdrop').hidden=!open;$('mobileMore').setAttribute('aria-expanded',String(open));
     const actions=$('toolbarActions');if(open){actions.setAttribute('role','dialog');actions.setAttribute('aria-modal','true');actions.setAttribute('aria-label','更多白板工具');actions.querySelector('button:not(:disabled)')?.focus();}else{actions.removeAttribute('role');actions.removeAttribute('aria-modal');actions.removeAttribute('aria-label');if(isMobile()&&actions.contains(document.activeElement))$('mobileMore').focus();}
@@ -103,6 +111,7 @@
     });
   }
   function updateMobileLayout(){
+    setToolbarMore(false);
     if(isMobile()){
       $('mobileNav').prepend($('btnAdd'));$('mobileMore').before($('btnSelect'));
     }else{mobileAddAnchor.after($('btnAdd'));mobileSelectAnchor.after($('btnSelect'));setMobileMore(false);setMobileMove(false);}
@@ -995,7 +1004,10 @@
   // ---------- foreground / background icon objects ----------
   const ICONS={person:'👤',team:'👥',customer:'🙋',database:'🗄️',document:'📄',warning:'⚠️',check:'✅',arrow:'➜',phone:'☎️',mail:'✉️',ai:'✦',calendar:'🗓️',flag:'⚑',idea:'💡',gear:'⚙️',home:'🏠',office:'🏢',warehouse:'🏬',factory:'🏭',shop:'🛍️',bank:'🏦',cloud:'☁️',server:'🖥️',folder:'📁',file:'📃',spreadsheet:'📑',chart:'📊',barChart:'📈',search:'🔍',target:'🎯',lock:'🔒',key:'🔑',shield:'🛡️',bell:'🔔',clock:'🕒',hourglass:'⌛',stopwatch:'⏱️',pin:'📌',map:'🗺️',globe:'🌐',car:'🚗',truck:'🚚',plane:'✈️',ship:'🚢',package:'📦',cart:'🛒',money:'💵',coin:'🪙',receipt:'🧾',card:'💳',heart:'❤️',star:'⭐',sparkle:'✨',fire:'🔥',bulb:'💡',wrench:'🔧',hammer:'🔨',tools:'🛠️',laptop:'💻',desktop:'🖥️',mobile:'📱',printer:'🖨️',camera:'📷',video:'🎥',microphone:'🎙️',headphones:'🎧',play:'▶️',pause:'⏸️',stop:'⏹️',refresh:'🔄',plus:'➕',minus:'➖',info:'ℹ️',question:'❓',prohibited:'🚫',success:'🟢',pending:'🟡',fail:'🔴',up:'⬆️',down:'⬇️',left:'⬅️',right:'➡️',link:'🔗',branch:'🌿',inbox:'📥',outbox:'📤'};
   const ICON_LABELS={person:'人物',team:'團隊',customer:'客戶',database:'資料庫',document:'文件',warning:'警告',check:'完成',arrow:'箭頭',phone:'電話',mail:'郵件',ai:'AI',calendar:'行事曆',flag:'旗標',idea:'點子',gear:'設定',home:'住家',office:'辦公室',warehouse:'倉庫',factory:'工廠',shop:'商店',bank:'銀行',cloud:'雲端',server:'伺服器',folder:'資料夾',file:'檔案',spreadsheet:'試算表',chart:'圖表',barChart:'趨勢圖',search:'搜尋',target:'目標',lock:'鎖定',key:'金鑰',shield:'安全',bell:'通知',clock:'時鐘',hourglass:'沙漏',stopwatch:'計時',pin:'圖釘',map:'地圖',globe:'網路',car:'汽車',truck:'貨車',plane:'飛機',ship:'船',package:'包裹',cart:'購物車',money:'金錢',coin:'硬幣',receipt:'收據',card:'信用卡',heart:'喜愛',star:'星星',sparkle:'亮點',fire:'熱門',bulb:'燈泡',wrench:'扳手',hammer:'工具錘',tools:'工具',laptop:'筆電',desktop:'桌機',mobile:'手機',printer:'印表機',camera:'相機',video:'影片',microphone:'麥克風',headphones:'耳機',play:'播放',pause:'暫停',stop:'停止',refresh:'重新整理',plus:'新增',minus:'減少',info:'資訊',question:'問題',prohibited:'禁止',success:'成功',pending:'待處理',fail:'失敗',up:'向上',down:'向下',left:'向左',right:'向右',link:'連結',branch:'分支',inbox:'收件',outbox:'寄出'};
-  function makeIconEl(icon){const el=document.createElement('button');el.type='button';el.className='iconobj '+icon.layer;el.dataset.id=icon.id;el.textContent=ICONS[icon.name]||ICONS.idea;el.title='圖示：拖曳移動，右下角調整大小';el.style.left=icon.x+'px';el.style.top=icon.y+'px';el.style.fontSize=icon.size+'px';
+  function makeIconEl(icon){const el=document.createElement('button');el.type='button';el.className='iconobj '+icon.layer;el.dataset.id=icon.id;
+    if(icon.name==='custom'&&icon.src){const image=document.createElement('img');image.src=icon.src;image.alt='自訂圖示';image.draggable=false;el.appendChild(image);}
+    else el.textContent=ICONS[icon.name]||ICONS.idea;
+    el.title='圖示：拖曳移動，右下角調整大小';el.style.left=icon.x+'px';el.style.top=icon.y+'px';el.style.fontSize=icon.size+'px';
     const resize=document.createElement('span');resize.className='icon-resize';el.appendChild(resize);world.appendChild(el);iconEls.set(icon.id,el);el.addEventListener('pointerdown',e=>onIconDown(e,icon));resize.addEventListener('pointerdown',e=>onIconResize(e,icon));}
   function deselectIcon(){if(selectedIcon){iconEls.get(selectedIcon)?.classList.remove('sel');selectedIcon=null;}hideIconbar();}
   function selectIcon(id){clearSelection();selectedIcon=id;iconEls.get(id)?.classList.add('sel');showIconbar();}
@@ -1009,7 +1021,18 @@
   function onIconResizeMove(e){if(!iconResize)return;const p=screenToWorld(e.clientX,e.clientY);iconResize.icon.size=Math.max(18,Math.min(160,Math.round(iconResize.size+p.x-iconResize.start.x)));iconEls.get(iconResize.icon.id).style.fontSize=iconResize.icon.size+'px';}
   function onIconResizeUp(){window.removeEventListener('pointermove',onIconResizeMove);window.removeEventListener('pointerup',onIconResizeUp);if(iconResize)scheduleSave();showIconbar();iconResize=null;}
   function deleteIcon(id){state.icons=state.icons.filter(icon=>icon.id!==id);iconEls.get(id)?.remove();iconEls.delete(id);if(selectedIcon===id)selectedIcon=null;hideIconbar();scheduleSave();}
-  function openIconPalette(){const palette=$('iconPalette');palette.innerHTML='';const search=document.createElement('input');search.type='search';search.placeholder='搜尋圖示';search.setAttribute('aria-label','搜尋圖示');palette.appendChild(search);const buttons=[];Object.entries(ICONS).forEach(([name,glyph])=>{const b=document.createElement('button');b.type='button';b.textContent=glyph;b.title=name;b.dataset.search=(name+' '+(ICON_LABELS[name]||name)).toLowerCase();b.setAttribute('aria-label',ICON_LABELS[name]||name);b.addEventListener('click',()=>{const r=canvas.getBoundingClientRect(),p=screenToWorld(r.left+r.width/2,r.top+r.height/2),icon={id:uid(),x:Math.round(p.x-22),y:Math.round(p.y-22),name,size:44,layer:'above'};state.icons.push(icon);makeIconEl(icon);selectIcon(icon.id);palette.hidden=true;scheduleSave();});palette.appendChild(b);buttons.push(b);});search.addEventListener('input',()=>{const query=search.value.trim().toLowerCase();buttons.forEach(button=>{button.hidden=!!query&&!button.dataset.search.includes(query);});});palette.hidden=!palette.hidden;if(!palette.hidden)search.focus();}
+  function addIcon(data){const r=canvas.getBoundingClientRect(),p=screenToWorld(r.left+r.width/2,r.top+r.height/2);
+    const icon={id:uid(),x:Math.round(p.x-22),y:Math.round(p.y-22),size:44,layer:'above',...data};state.icons.push(icon);makeIconEl(icon);selectIcon(icon.id);$('iconPalette').hidden=true;scheduleSave();}
+  function readCustomIconFile(file){if(!/^image\/(png|webp)$/.test(file.type)||file.size>2*1024*1024){showBanner('自訂圖示請使用 2 MB 內的 PNG 或 WebP');return;}
+    const reader=new FileReader();reader.onerror=()=>showBanner('無法讀取圖示');reader.onload=()=>{const image=new Image();image.onerror=()=>showBanner('圖示格式無法讀取');image.onload=()=>{
+      const scale=Math.min(1,256/Math.max(image.width,image.height)),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(image.width*scale));canvas.height=Math.max(1,Math.round(image.height*scale));
+      canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);const src=canvas.toDataURL('image/png');if(src.length>1024*1024){showBanner('圖示內容過大，請改用較簡單的圖片');return;}addIcon({name:'custom',src});};image.src=reader.result;};reader.readAsDataURL(file);}
+  function openIconPalette(){const palette=$('iconPalette');if(!palette.hidden){palette.hidden=true;return;}palette.replaceChildren();
+    const search=document.createElement('input');search.type='search';search.placeholder='搜尋圖示';search.setAttribute('aria-label','搜尋圖示');palette.appendChild(search);
+    const buttons=[];Object.entries(ICONS).forEach(([name,glyph])=>{const button=document.createElement('button');button.type='button';button.textContent=glyph;button.title=name;button.dataset.search=(name+' '+(ICON_LABELS[name]||name)).toLowerCase();button.setAttribute('aria-label',ICON_LABELS[name]||name);button.addEventListener('click',()=>addIcon({name}));palette.appendChild(button);buttons.push(button);});
+    search.addEventListener('input',()=>{const query=search.value.trim().toLowerCase();buttons.forEach(button=>{button.hidden=!!query&&!button.dataset.search.includes(query);});});
+    const custom=document.createElement('div');custom.className='icon-custom';const upload=document.createElement('button');upload.type='button';upload.textContent='上傳自訂 PNG／WebP 圖示';upload.addEventListener('click',()=>{const input=document.createElement('input');input.type='file';input.accept='image/png,image/webp';input.addEventListener('change',()=>{if(input.files[0])readCustomIconFile(input.files[0]);});input.click();});
+    custom.append(upload);palette.appendChild(custom);palette.hidden=false;search.focus();}
   $('btnIcon').addEventListener('click',openIconPalette);
   $('iconLayer').addEventListener('change',e=>{const icon=byId(state.icons,selectedIcon);if(!icon)return;icon.layer=e.target.value==='below'?'below':'above';const el=iconEls.get(icon.id);el.classList.toggle('below',icon.layer==='below');el.classList.toggle('above',icon.layer==='above');scheduleSave();});
   $('iconDelete').addEventListener('click',()=>{if(selectedIcon)deleteIcon(selectedIcon);});
