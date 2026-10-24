@@ -1,0 +1,18 @@
+flowchart LR
+  START(上游系統完成付款與發票處理)
+  subgraph MIDDLE [中台]
+    MIDDLE_RECEIVE[接收上游訂單與交易結果]
+    MIDDLE_SEND[將訂單送往 OMG]
+    MIDDLE_FAIL[收到 OMG 接單失敗通知]
+  end
+  subgraph OMG [OMG 接單模組]
+    OMG_RECEIVE[接收中台訂單]
+    OMG_TRANSFORM[轉換訂單資料]
+    OMG_SAVE[寫入 OMG 訂單]
+    OMG_CHECK{接單及寫入是否成功}
+    OMG_DONE(OMG 訂單建立完成)
+  end
+  START --> MIDDLE_RECEIVE --> MIDDLE_SEND --> OMG_RECEIVE
+  OMG_RECEIVE --> OMG_TRANSFORM --> OMG_SAVE --> OMG_CHECK
+  OMG_CHECK -->|成功| OMG_DONE
+  OMG_CHECK -->|失敗| MIDDLE_FAIL
