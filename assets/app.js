@@ -571,8 +571,9 @@
     if(b.type==='divider'){const hr=document.createElement('div');hr.className='hr';main.appendChild(hr);return el;}
     if(b.type==='image'){
       if(b.src){const img=document.createElement('img');img.src=b.src;main.appendChild(img);}
-      else{const ph=document.createElement('div');ph.className='imgph';ph.textContent='點擊上傳圖片';
-        ph.addEventListener('click',()=>pickImage(src=>{b.src=src;touch(c);scheduleSave();renderTile(c);renderBlocks(c);}));main.appendChild(ph);}
+      else{const ph=document.createElement('div');ph.className='imgph';ph.textContent='點擊上傳或貼上圖片';ph.tabIndex=0;
+        ph.addEventListener('click',()=>pickImage(src=>{b.src=src;touch(c);scheduleSave();renderTile(c);renderBlocks(c);}));
+        ph.addEventListener('paste',event=>{const file=clipboardImage(event.clipboardData);if(!file)return;event.preventDefault();event.stopPropagation();readImageFile(file,src=>{b.src=src;touch(c);scheduleSave();renderTile(c);renderBlocks(c);});});main.appendChild(ph);}
       return el;}
     if(b.type==='diagram'){
       const editor=document.createElement('textarea');editor.className='pele-source';
@@ -603,6 +604,8 @@
     return el;}
 
   function onBlockPaste(e,c,b,ed){const cd=e.clipboardData||window.clipboardData;if(!cd)return;
+    const image=clipboardImage(cd);
+    if(image){e.preventDefault();readImageFile(image,(src)=>{const index=c.blocks.findIndex(x=>x.id===b.id),imageBlock=mkBlock('image','');imageBlock.src=src;c.blocks.splice(index+1,0,imageBlock);touch(c);scheduleSave();renderTile(c);renderBlocks(c);});return;}
     const raw=cd.getData('text/plain')||'';const text=raw.trim();e.preventDefault();
     if(isURL(text)){const url=normalizeURL(text);const sel=window.getSelection();
       if(sel&&sel.rangeCount&&!sel.isCollapsed)document.execCommand('createLink',false,url);
@@ -645,7 +648,10 @@
   $('addBlk').addEventListener('click',()=>{const c=curCard();if(!c)return;openInsertMenu(c.blocks.length-1,$('addBlk'));});
 
   function pickImage(cb){const i=document.createElement('input');i.type='file';i.accept='image/*';
-    i.onchange=()=>{const f=i.files[0];if(!f)return;if(f.size>Core.MAX_BYTES||!/^image\/(png|jpeg|webp|gif)$/.test(f.type)){showBanner('請選擇 20 MB 內的 PNG、JPEG、WebP 或 GIF 圖片');return;}const rd=new FileReader();rd.onload=()=>resizeImage(rd.result,cb);rd.readAsDataURL(f);};i.click();}
+    i.onchange=()=>{const f=i.files[0];if(f)readImageFile(f,cb);};i.click();}
+  function validImageFile(file){if(file.size>Core.MAX_BYTES||!/^image\/(png|jpeg|webp|gif)$/.test(file.type)){showBanner('請選擇 20 MB 內的 PNG、JPEG、WebP 或 GIF 圖片');return false;}return true;}
+  function clipboardImage(clipboard){if(!clipboard)return null;for(const item of clipboard.items||[]){if(item.kind==='file'&&/^image\/(png|jpeg|webp|gif)$/.test(item.type)){const file=item.getAsFile();if(file)return file;}}for(const file of clipboard.files||[])if(/^image\/(png|jpeg|webp|gif)$/.test(file.type))return file;return null;}
+  function readImageFile(file,cb,maxDim){if(!validImageFile(file))return;const reader=new FileReader();reader.onload=()=>resizeImage(reader.result,cb,maxDim);reader.onerror=()=>showBanner('無法讀取圖片');reader.readAsDataURL(file);}
   function resizeImage(dataUrl,cb,maxDim){const img=new Image();img.onload=()=>{const max=maxDim||1200;let w=img.width,h=img.height;
     if(w>max||h>max){const s=Math.min(max/w,max/h);w=Math.round(w*s);h=Math.round(h*s);}
     const cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(img,0,0,w,h);
@@ -983,10 +989,11 @@
     state.images.push(im);makeImageEl(im);setBgEdit(true);selectImage(im.id);scheduleSave();}
   function placeMapImage(dataUrl,w,h){placeImageObject(dataUrl,w,h,0.55,700);}
   function uploadReferenceImage(){const i=document.createElement('input');i.type='file';i.accept='image/*';
-    i.onchange=()=>{const f=i.files[0];if(!f)return;if(f.size>Core.MAX_BYTES||!/^image\/(png|jpeg|webp|gif)$/.test(f.type)){showBanner('請選擇 20 MB 內的 PNG、JPEG、WebP 或 GIF 圖片');return;}const rd=new FileReader();rd.onload=()=>resizeImage(rd.result,(src,w,h)=>placeImageObject(src,w,h,1,560),1800);rd.readAsDataURL(f);};i.click();}
+    i.onchange=()=>{const f=i.files[0];if(f)readImageFile(f,(src,w,h)=>placeImageObject(src,w,h,1,560),1800);};i.click();}
 
   // ---------- foreground / background icon objects ----------
-  const ICONS={person:'👤',team:'👥',database:'🗄️',document:'📄',warning:'⚠️',check:'✅',arrow:'➜',phone:'☎️',mail:'✉️',ai:'✦',calendar:'🗓️',flag:'⚑',idea:'💡',gear:'⚙️'};
+  const ICONS={person:'👤',team:'👥',customer:'🙋',database:'🗄️',document:'📄',warning:'⚠️',check:'✅',arrow:'➜',phone:'☎️',mail:'✉️',ai:'✦',calendar:'🗓️',flag:'⚑',idea:'💡',gear:'⚙️',home:'🏠',office:'🏢',warehouse:'🏬',factory:'🏭',shop:'🛍️',bank:'🏦',cloud:'☁️',server:'🖥️',folder:'📁',file:'📃',spreadsheet:'📑',chart:'📊',barChart:'📈',search:'🔍',target:'🎯',lock:'🔒',key:'🔑',shield:'🛡️',bell:'🔔',clock:'🕒',hourglass:'⌛',stopwatch:'⏱️',pin:'📌',map:'🗺️',globe:'🌐',car:'🚗',truck:'🚚',plane:'✈️',ship:'🚢',package:'📦',cart:'🛒',money:'💵',coin:'🪙',receipt:'🧾',card:'💳',heart:'❤️',star:'⭐',sparkle:'✨',fire:'🔥',bulb:'💡',wrench:'🔧',hammer:'🔨',tools:'🛠️',laptop:'💻',desktop:'🖥️',mobile:'📱',printer:'🖨️',camera:'📷',video:'🎥',microphone:'🎙️',headphones:'🎧',play:'▶️',pause:'⏸️',stop:'⏹️',refresh:'🔄',plus:'➕',minus:'➖',info:'ℹ️',question:'❓',prohibited:'🚫',success:'🟢',pending:'🟡',fail:'🔴',up:'⬆️',down:'⬇️',left:'⬅️',right:'➡️',link:'🔗',branch:'🌿',inbox:'📥',outbox:'📤'};
+  const ICON_LABELS={person:'人物',team:'團隊',customer:'客戶',database:'資料庫',document:'文件',warning:'警告',check:'完成',arrow:'箭頭',phone:'電話',mail:'郵件',ai:'AI',calendar:'行事曆',flag:'旗標',idea:'點子',gear:'設定',home:'住家',office:'辦公室',warehouse:'倉庫',factory:'工廠',shop:'商店',bank:'銀行',cloud:'雲端',server:'伺服器',folder:'資料夾',file:'檔案',spreadsheet:'試算表',chart:'圖表',barChart:'趨勢圖',search:'搜尋',target:'目標',lock:'鎖定',key:'金鑰',shield:'安全',bell:'通知',clock:'時鐘',hourglass:'沙漏',stopwatch:'計時',pin:'圖釘',map:'地圖',globe:'網路',car:'汽車',truck:'貨車',plane:'飛機',ship:'船',package:'包裹',cart:'購物車',money:'金錢',coin:'硬幣',receipt:'收據',card:'信用卡',heart:'喜愛',star:'星星',sparkle:'亮點',fire:'熱門',bulb:'燈泡',wrench:'扳手',hammer:'工具錘',tools:'工具',laptop:'筆電',desktop:'桌機',mobile:'手機',printer:'印表機',camera:'相機',video:'影片',microphone:'麥克風',headphones:'耳機',play:'播放',pause:'暫停',stop:'停止',refresh:'重新整理',plus:'新增',minus:'減少',info:'資訊',question:'問題',prohibited:'禁止',success:'成功',pending:'待處理',fail:'失敗',up:'向上',down:'向下',left:'向左',right:'向右',link:'連結',branch:'分支',inbox:'收件',outbox:'寄出'};
   function makeIconEl(icon){const el=document.createElement('button');el.type='button';el.className='iconobj '+icon.layer;el.dataset.id=icon.id;el.textContent=ICONS[icon.name]||ICONS.idea;el.title='圖示：拖曳移動，右下角調整大小';el.style.left=icon.x+'px';el.style.top=icon.y+'px';el.style.fontSize=icon.size+'px';
     const resize=document.createElement('span');resize.className='icon-resize';el.appendChild(resize);world.appendChild(el);iconEls.set(icon.id,el);el.addEventListener('pointerdown',e=>onIconDown(e,icon));resize.addEventListener('pointerdown',e=>onIconResize(e,icon));}
   function deselectIcon(){if(selectedIcon){iconEls.get(selectedIcon)?.classList.remove('sel');selectedIcon=null;}hideIconbar();}
@@ -1001,7 +1008,7 @@
   function onIconResizeMove(e){if(!iconResize)return;const p=screenToWorld(e.clientX,e.clientY);iconResize.icon.size=Math.max(18,Math.min(160,Math.round(iconResize.size+p.x-iconResize.start.x)));iconEls.get(iconResize.icon.id).style.fontSize=iconResize.icon.size+'px';}
   function onIconResizeUp(){window.removeEventListener('pointermove',onIconResizeMove);window.removeEventListener('pointerup',onIconResizeUp);if(iconResize)scheduleSave();showIconbar();iconResize=null;}
   function deleteIcon(id){state.icons=state.icons.filter(icon=>icon.id!==id);iconEls.get(id)?.remove();iconEls.delete(id);if(selectedIcon===id)selectedIcon=null;hideIconbar();scheduleSave();}
-  function openIconPalette(){const palette=$('iconPalette');palette.innerHTML='';Object.entries(ICONS).forEach(([name,glyph])=>{const b=document.createElement('button');b.type='button';b.textContent=glyph;b.title=name;b.addEventListener('click',()=>{const r=canvas.getBoundingClientRect(),p=screenToWorld(r.left+r.width/2,r.top+r.height/2),icon={id:uid(),x:Math.round(p.x-22),y:Math.round(p.y-22),name,size:44,layer:'above'};state.icons.push(icon);makeIconEl(icon);selectIcon(icon.id);palette.hidden=true;scheduleSave();});palette.appendChild(b);});palette.hidden=!palette.hidden;}
+  function openIconPalette(){const palette=$('iconPalette');palette.innerHTML='';const search=document.createElement('input');search.type='search';search.placeholder='搜尋圖示';search.setAttribute('aria-label','搜尋圖示');palette.appendChild(search);const buttons=[];Object.entries(ICONS).forEach(([name,glyph])=>{const b=document.createElement('button');b.type='button';b.textContent=glyph;b.title=name;b.dataset.search=(name+' '+(ICON_LABELS[name]||name)).toLowerCase();b.setAttribute('aria-label',ICON_LABELS[name]||name);b.addEventListener('click',()=>{const r=canvas.getBoundingClientRect(),p=screenToWorld(r.left+r.width/2,r.top+r.height/2),icon={id:uid(),x:Math.round(p.x-22),y:Math.round(p.y-22),name,size:44,layer:'above'};state.icons.push(icon);makeIconEl(icon);selectIcon(icon.id);palette.hidden=true;scheduleSave();});palette.appendChild(b);buttons.push(b);});search.addEventListener('input',()=>{const query=search.value.trim().toLowerCase();buttons.forEach(button=>{button.hidden=!!query&&!button.dataset.search.includes(query);});});palette.hidden=!palette.hidden;if(!palette.hidden)search.focus();}
   $('btnIcon').addEventListener('click',openIconPalette);
   $('iconLayer').addEventListener('change',e=>{const icon=byId(state.icons,selectedIcon);if(!icon)return;icon.layer=e.target.value==='below'?'below':'above';const el=iconEls.get(icon.id);el.classList.toggle('below',icon.layer==='below');el.classList.toggle('above',icon.layer==='above');scheduleSave();});
   $('iconDelete').addEventListener('click',()=>{if(selectedIcon)deleteIcon(selectedIcon);});
@@ -1076,6 +1083,7 @@
   function closeMapModal(){$('mapModal').classList.remove('open');}
   $('btnMap').addEventListener('click',openMapModal);
   $('btnImg').addEventListener('click',uploadReferenceImage);
+  document.addEventListener('paste',event=>{const target=event.target;if(target.closest('[contenteditable="true"],input,textarea,select'))return;const file=clipboardImage(event.clipboardData);if(!file)return;event.preventDefault();readImageFile(file,(src,w,h)=>placeImageObject(src,w,h,1,560),1800);});
   $('mmClose').addEventListener('click',closeMapModal);
   $('mmCancel').addEventListener('click',closeMapModal);
   $('mapModal').addEventListener('pointerdown',e=>{if(e.target.id==='mapModal')closeMapModal();});
