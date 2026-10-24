@@ -76,6 +76,8 @@
   .group .gtitle{font-size:12px;font-weight:600;color:var(--ink-soft);background:var(--bg);padding:1px 8px;border-radius:7px;
     border:1px solid var(--line);outline:none;cursor:move;min-width:30px;}
   .group .gtitle:focus{cursor:text;border-color:var(--accent);color:var(--ink);}
+  .group .gungroup{border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--accent);padding:2px 7px;font:11px var(--font);cursor:pointer;white-space:nowrap;}
+  .group .gungroup:hover{background:var(--accent-soft);border-color:var(--accent);}
 
   /* card tile */
   .card{position:absolute;width:240px;min-height:48px;z-index:3;background:#fff;border:1px solid var(--line);border-radius:14px;
