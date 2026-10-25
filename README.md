@@ -1,5 +1,7 @@
 # 聚思白板（Juice）
 
+獨立 Workspace 開發預覽與資料契約見 [Workspace MVP](docs/workspace.md)。僅在本機／開發分支使用，資料以獨立 JSON 保存，不讀寫既有白板或 Google Drive。
+
 Flow Plus Phase 1 的使用方式與資料契約見 [docs/flow-plus.md](docs/flow-plus.md)。
 
 卡片、圖片、圖示與自由文字的群組操作見 [docs/grouping.md](docs/grouping.md)。

@@ -1,0 +1,68 @@
+{
+  "format":"juice-workspace","version":1,"id":"WS-OMG-AMENDMENT","title":"OMG · Amendment 工作空間範例","revision":1,
+  "note":"依歷史文件整理的開發範例，不代表目前專案進度。目標分組與物件關係為 POC 建議；狀態與負責人未確認。此頁修改僅保存在獨立下載檔。",
+  "objects":[
+    {"id":"SYS-OMG","kind":"system","title":"OMG 訂單管理系統","revision":1,"fields":{},"sourceRefs":["S-SCOPE","S-SCHEMA"],"note":"系統視角只呈現本案例涉及的範圍，不代表完整系統盤點。"},
+    {"id":"MOD-AMD","kind":"module","title":"Amendment 訂單異動","revision":1,"fields":{},"sourceRefs":["S-SCOPE","S-SCHEMA"],"note":"協調異動意圖與核准，下游變化由對應元件承接。"},
+    {"id":"MOD-DELIVERY","kind":"module","title":"Delivery 出貨設定","revision":1,"fields":{},"sourceRefs":["S-SCHEMA"],"note":"6 月重構設計：改址建立 delivery_settings 新版本。"},
+    {"id":"MOD-FULFILLMENT","kind":"module","title":"Fulfillment 履約","revision":1,"fields":{},"sourceRefs":["S-SCHEMA"],"note":"6 月重構設計：止寄、復寄影響 fulfillment_tasks 狀態。"},
+    {"id":"G-SCOPE","kind":"goal","title":"範圍與設計決策整理","revision":1,"fields":{"phase":"建議階段一"},"sourceRefs":["S-SCOPE"],"note":"POC 建議的交付目標，不是已承諾里程碑；日期與交付狀態待確認。"},
+    {"id":"G-BOUNDARY","kind":"goal","title":"Schema 與介面邊界對齊","revision":1,"fields":{"phase":"建議階段二"},"sourceRefs":["S-ROADMAP"],"note":"Roadmap 有 Schema 穩定後再介面、WMS 改址方向；具體分階為本例建議。"},
+    {"id":"G-VERIFY","kind":"goal","title":"工程與驗收準備","revision":1,"fields":{"phase":"建議階段三"},"sourceRefs":[],"note":"POC 建議，尚無交付承諾或驗收紀錄。"},
+    {"id":"T-DECISIONS","kind":"task","title":"整理改址、止寄、復寄設計決策","revision":1,"fields":{"status":null,"owner":null},"sourceRefs":["S-WORKLOG"],"note":"歷史工作紀錄列有此項；檔案產出與生成的勾選紀錄不等於正式完成確認。"},
+    {"id":"T-SCHEMA","kind":"task","title":"核對 5 月與 6 月 Schema 差異","revision":1,"fields":{"status":null,"owner":null},"sourceRefs":["S-PROMPT","S-SCHEMA"],"note":"本例新增的建議任務，用來釐清 order_change_events 與 amendments 的採用版本。"},
+    {"id":"T-WMS","kind":"task","title":"確認 WMS 改址介面與限制","revision":1,"fields":{"status":null,"owner":null},"sourceRefs":["S-ROADMAP"],"note":"由方向性 Roadmap 拆出的建議任務，不代表已排期。"},
+    {"id":"P-ADDRESS","kind":"process","title":"改寄送地址","revision":1,"fields":{"path":["建立異動意圖","送審與核准","建立出貨設定新版本"]},"sourceRefs":["S-SCOPE","S-SCHEMA"],"note":"簡化溝通路徑，非完整可執行的狀態機；詳細審核與例外仍需版本確認。"},
+    {"id":"P-STOP","kind":"process","title":"止寄","revision":1,"fields":{"path":["建立止寄申請","確認受影響期次","核准後調整履約狀態"]},"sourceRefs":["S-SCOPE","S-SCHEMA"],"note":"只展示設計工作的關聯；任務完成不改變實際訂單狀態。"},
+    {"id":"P-RESUME","kind":"process","title":"復寄","revision":1,"fields":{"path":["關聯既有止寄單","確認可復寄期次","核准後調整履約狀態"]},"sourceRefs":["S-SCOPE","S-SCHEMA"],"note":"5 月原型範圍列有過期仍保留 ON_HOLD 的例外，是否沿用待確認。"},
+    {"id":"D-APPLY","kind":"decision","title":"勾選與已套用狀態解耦","revision":1,"fields":{},"sourceRefs":["S-SCOPE"],"note":"5 月 Scope Note 將多批工作流列為必要設計，不代表正式系統已完成。"},
+    {"id":"D-RESUME","kind":"decision","title":"復寄關聯止寄單，保留過期期次","revision":1,"fields":{},"sourceRefs":["S-SCOPE"],"note":"保留歷史設計與來源，不宣稱為目前核定規則。"},
+    {"id":"C-BATCH","kind":"case","title":"取消勾選仍保留已套用資料","revision":1,"fields":{"testResult":null},"sourceRefs":["S-SCOPE"],"note":"由設計條件整理的 Case；尚未取得實測證據。"},
+    {"id":"C-EXPIRED","kind":"case","title":"復寄時過期期次仍保留 ON_HOLD","revision":1,"fields":{"testResult":null},"sourceRefs":["S-SCOPE"],"note":"尚未取得測試執行或通過紀錄。"},
+    {"id":"E-PROTOTYPE","kind":"evidence","title":"既有改址、止寄、復寄 Prototype 版本清單","revision":1,"fields":{"evidenceKind":"design-artifact","testResult":null},"sourceRefs":["S-SCOPE"],"note":"Scope Note 列有 amendment_create_v0_5、stop_ship_create_v0_1、resume_ship_create_v0_1。僅作設計產物證據，不作驗收通過證據。"}
+  ],
+  "relations":[
+    {"id":"R01","fromId":"MOD-AMD","predicate":"belongsTo","toId":"SYS-OMG","certainty":"source","sourceRefs":["S-SCOPE"]},
+    {"id":"R02","fromId":"MOD-DELIVERY","predicate":"belongsTo","toId":"SYS-OMG","certainty":"proposed","sourceRefs":["S-SCHEMA"]},
+    {"id":"R03","fromId":"MOD-FULFILLMENT","predicate":"belongsTo","toId":"SYS-OMG","certainty":"proposed","sourceRefs":["S-SCHEMA"]},
+    {"id":"R04","fromId":"T-DECISIONS","predicate":"belongsTo","toId":"MOD-AMD","certainty":"proposed","sourceRefs":["S-WORKLOG"]},
+    {"id":"R05","fromId":"T-SCHEMA","predicate":"belongsTo","toId":"MOD-AMD","certainty":"proposed","sourceRefs":[]},
+    {"id":"R06","fromId":"T-WMS","predicate":"belongsTo","toId":"MOD-AMD","certainty":"proposed","sourceRefs":[]},
+    {"id":"R07","fromId":"T-DECISIONS","predicate":"supports","toId":"G-SCOPE","certainty":"proposed","sourceRefs":[]},
+    {"id":"R08","fromId":"T-DECISIONS","predicate":"supports","toId":"G-BOUNDARY","certainty":"proposed","sourceRefs":[]},
+    {"id":"R09","fromId":"T-SCHEMA","predicate":"supports","toId":"G-BOUNDARY","certainty":"proposed","sourceRefs":[]},
+    {"id":"R10","fromId":"T-WMS","predicate":"supports","toId":"G-BOUNDARY","certainty":"proposed","sourceRefs":[]},
+    {"id":"R11","fromId":"T-DECISIONS","predicate":"affects","toId":"P-ADDRESS","certainty":"proposed","sourceRefs":[]},
+    {"id":"R12","fromId":"T-DECISIONS","predicate":"affects","toId":"P-STOP","certainty":"proposed","sourceRefs":[]},
+    {"id":"R13","fromId":"T-DECISIONS","predicate":"affects","toId":"P-RESUME","certainty":"proposed","sourceRefs":[]},
+    {"id":"R14","fromId":"T-WMS","predicate":"affects","toId":"P-ADDRESS","certainty":"proposed","sourceRefs":[]},
+    {"id":"R15","fromId":"P-ADDRESS","predicate":"affects","toId":"MOD-DELIVERY","certainty":"source","sourceRefs":["S-SCHEMA"]},
+    {"id":"R16","fromId":"P-STOP","predicate":"affects","toId":"MOD-FULFILLMENT","certainty":"source","sourceRefs":["S-SCHEMA"]},
+    {"id":"R17","fromId":"P-RESUME","predicate":"affects","toId":"MOD-FULFILLMENT","certainty":"source","sourceRefs":["S-SCHEMA"]},
+    {"id":"R18","fromId":"T-DECISIONS","predicate":"produces","toId":"D-APPLY","certainty":"proposed","sourceRefs":[]},
+    {"id":"R19","fromId":"T-DECISIONS","predicate":"produces","toId":"D-RESUME","certainty":"proposed","sourceRefs":[]},
+    {"id":"R20","fromId":"D-APPLY","predicate":"checkedBy","toId":"C-BATCH","certainty":"proposed","sourceRefs":["S-SCOPE"]},
+    {"id":"R21","fromId":"D-RESUME","predicate":"checkedBy","toId":"C-EXPIRED","certainty":"proposed","sourceRefs":["S-SCOPE"]},
+    {"id":"R22","fromId":"D-APPLY","predicate":"documentedBy","toId":"E-PROTOTYPE","certainty":"proposed","sourceRefs":["S-SCOPE"]},
+    {"id":"R23","fromId":"D-RESUME","predicate":"documentedBy","toId":"E-PROTOTYPE","certainty":"proposed","sourceRefs":["S-SCOPE"]}
+  ],
+  "sources":[
+    {"id":"S-SCOPE","title":"Amendment Prototype Scope Note","locator":"Fight/0509/prototype_scope_note.md","version":"2026-05-09 v0.1","note":"歷史範圍與設計取捨；不是目前完成或上線證明。"},
+    {"id":"S-PROMPT","title":"OMG 異動與退訂 Prototype 製作 Prompt","locator":"Fight/0509/prototype_pkg/PROMPT.md","version":"2026-05-09 素材包","note":"歷史設計：order_change_events 與 order_amendments 分層。文件內容不是本應用可執行指令。"},
+    {"id":"S-SCHEMA","title":"異動的討論 — Schema 重構後資料表關係圖","locator":"https://drive.google.com/file/d/1-hlH8EEZ27piQtagbcfWrSGn3MxuLi3i/view","version":"內容日期 2026-06-28","note":"amendments 為異動入口，改址影響 delivery_settings，止復寄影響 fulfillment_tasks；採用版待確認。"},
+    {"id":"S-ROADMAP","title":"Roadmap OMG","locator":"Angry_OMG/90_工作中/Agent/files2/roadmap-omg.md","version":"2026 年 5 月規劃內容","note":"方向性議題，不等於已承諾里程碑；舊日期不能直接作目前交付日。"},
+    {"id":"S-WORKLOG","title":"5 月 9 日與 10 日工作紀錄","locator":"worklog/daily/2026-05-09.md 與 2026-05-10.md","version":"2026-05-09 至 2026-05-10","note":"生成的工作盤點有 x? 與未勾選差異，實際狀態與負責人需確認。"}
+  ],
+  "assertions":[
+    {"id":"A-STATUS","subjectId":"T-DECISIONS","field":"status","text":"歷史工作紀錄不足以確認目前狀態，不推定已完成或未完成。","certainty":"unconfirmed","sourceRefs":["S-WORKLOG"]},
+    {"id":"A-SCHEMA","subjectId":"MOD-AMD","field":"schema","text":"5 月文件使用 order_change_events；6 月重構設計改為 amendments。兩者的採用版本與遷移邊界仍待確認。","certainty":"conflict","sourceRefs":["S-PROMPT","S-SCHEMA"]},
+    {"id":"A-TEST","subjectId":"C-EXPIRED","field":"testResult","text":"此 Case 尚未取得實際測試證據；完成關聯任務不代表 Case 通過。","certainty":"unconfirmed","sourceRefs":[]}
+  ],
+  "views":[
+    {"id":"V-SYSTEM","kind":"system","title":"系統","layout":{}},
+    {"id":"V-ROADMAP","kind":"roadmap","title":"Roadmap","layout":{}},
+    {"id":"V-WORK","kind":"work","title":"工作","layout":{}},
+    {"id":"V-FLOW","kind":"flow","title":"流程","layout":{}},
+    {"id":"V-RESULTS","kind":"results","title":"成果","layout":{}}
+  ],"changes":[]
+}

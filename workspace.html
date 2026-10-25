@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Juice Workspace · 開發預覽</title><link rel="stylesheet" href="assets/workspace.css"></head>
+<body>
+<header><a href="index.html" id="backToBoard">← Juice 白板</a><h1>Workspace <small>開發預覽</small></h1><span id="saveState" role="status">尚未載入資料</span></header>
+<main>
+  <section class="intro"><h2>同一份資料，不同觀看方式</h2><p>獨立檔案模式，不讀寫白板、本機白板資料庫或 Google Drive。修改後請下載 JSON 保存，下次再匯入。</p>
+    <div class="actions"><button id="loadDemo">載入 Amendment 範例</button><button id="importButton">匯入 Workspace JSON</button><button id="exportButton" disabled>下載 Workspace JSON</button><input id="workspaceFile" type="file" accept=".json,application/json" hidden></div>
+  </section>
+  <p id="message" role="status" aria-live="polite"></p>
+  <section id="workspace" hidden>
+    <div class="workspace-heading"><h2 id="workspaceTitle"></h2><span id="workspaceRevision"></span></div>
+    <p id="workspaceNote" class="muted"></p>
+    <nav id="viewTabs" aria-label="工作空間視角"></nav>
+    <div class="workspace-layout">
+      <section id="viewContent" aria-live="polite" aria-label="目前視角"></section>
+      <aside id="objectPanel" aria-label="物件詳情"><h2>點選物件查看來源</h2><p>只維護一份任務資料，所有視角即時讀取相同 ID。</p></aside>
+    </div>
+    <details><summary>變更紀錄與資料保存</summary><div id="changeLog"></div><p>下載成功僅表示檔案已交給瀏覽器，請確認檔案已保存。此頁重新整理後不會自動恢復；未匯出的變更會提示離開確認。</p></details>
+  </section>
+</main>
+<script src="assets/workspace-core.js"></script><script src="assets/workspace-app.js"></script>
+</body></html>
