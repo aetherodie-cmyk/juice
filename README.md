@@ -1,5 +1,7 @@
 # 聚思白板（Juice）
 
+巢狀卡片獨立預覽：[nested-cards.html](nested-cards.html)。用途標籤、共用引用與資料保存方式見 [巢狀卡片原型](docs/nested-cards.md)；[整合正式白板的方案](docs/nested-cards-integration.md)尚未實作。
+
 Flow Plus Phase 1 的使用方式與資料契約見 [docs/flow-plus.md](docs/flow-plus.md)。
 
 卡片、圖片、圖示與自由文字的群組操作見 [docs/grouping.md](docs/grouping.md)。

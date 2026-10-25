@@ -4,7 +4,9 @@
   "scripts": {
     "test": "playwright test",
     "test:reader": "playwright test --config=playwright.reader.config.cjs",
-    "check": "node --check assets/core.js && node --check assets/app.js && node --check assets/pele-flow.js && node --check assets/flow-builder.js && node --check assets/flow-ai.js && node --check assets/flow-plus.js && node --check assets/flow-reader.js"
+    "check": "node --check assets/core.js && node --check assets/app.js && node --check assets/pele-flow.js && node --check assets/flow-builder.js && node --check assets/flow-ai.js && node --check assets/flow-plus.js && node --check assets/flow-reader.js && node --check assets/nested-core.js && node --check assets/nested-app.js",
+    "test:nested:unit": "node --test tests/nested-core.unit.cjs",
+    "test:nested": "npm run test:nested:unit && playwright test --config=playwright.nested.config.cjs"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1"

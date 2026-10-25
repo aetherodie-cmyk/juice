@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Juice · 巢狀卡片原型</title><link rel="stylesheet" href="assets/nested-cards.css?v=roles-1"></head>
+<body>
+<header><div class="brand">Juice <span>巢狀卡片 · 本機原型</span></div><div class="tools"><button id="demo">載入驗收範例</button><button id="add">新增卡片</button><button id="collapse">全部收合</button><button id="save">儲存原型</button><button id="export">下載原型 JSON</button><button id="import">匯入原型／白板副本</button><button id="sourceExport">匯出原白板</button><input id="file" type="file" accept=".json,application/json" hidden></div></header>
+<div class="notice"><span>依序展開 <strong>OMG → 異動 → 工作清單</strong>，再展開「驗收準備」檢查共用引用。既有白板資料不回寫。</span><span id="savedState" role="status"></span></div>
+<p id="message" role="status" aria-live="polite"></p>
+<main id="canvas" aria-label="巢狀卡片白板，拖曳空白處平移"><div id="world"><svg id="links" aria-hidden="true"></svg><div id="content"></div></div></main>
+<footer><span>拖曳卡片把手自由編排 · 滾輪平移／Ctrl 或 ⌘＋滾輪縮放 · 展開時向下避讓，收合恢復基準位置</span><div><button id="zoomOut" aria-label="縮小白板">−</button><span id="zoom">90%</span><button id="zoomIn" aria-label="放大白板">＋</button><button id="fit">符合視窗</button></div></footer>
+<dialog id="picker"><form id="pickerForm"><h2 id="pickerTitle"></h2><div id="pickerFields"></div><p id="pickerError" role="alert"></p><div class="dialog-actions"><button type="button" id="pickerCancel">取消</button><button type="submit">確認</button></div></form></dialog>
+<script id="peleLib" async src="https://cdn.jsdelivr.net/npm/pele@1.9.0/dist/pele.global.js"></script><script src="assets/core.js"></script><script src="assets/pele-flow.js"></script><script src="assets/nested-core.js?v=roles-1"></script><script src="assets/nested-app.js?v=roles-1"></script>
+</body></html>
