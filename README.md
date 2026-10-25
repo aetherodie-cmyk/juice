@@ -2,6 +2,8 @@
 
 原版白板入口為 [index.html](index.html)；Workspace 入口為 [workspace.html](workspace.html)，舊的 [nested-cards.html](nested-cards.html) 仍可開啟同一工作區。Workspace 包含樹狀工作表格、共用引用、自由物件、流程圖與 UI-007 視覺精簡；操作及限制見 [UI-006 交接](docs/JUICE-UI-006-HANDOFF.md)。兩版的資料各自保存，不會自動同步或轉換。
 
+Workspace 一般文字卡可選擇七種卡片顏色。自身流程卡可編輯 Mermaid 原文、顏色與寬度，使用共用圖形編輯器與 Pele 預覽、開啟獨立檢視、使用 AI 提示詞與結果匯入，並建立／編輯 Flow Plus 節點詳情；流程引用保持唯讀。這些資料只寫入 Workspace 原型，不回寫原版白板。
+
 Flow Plus Phase 1 的使用方式與資料契約見 [docs/flow-plus.md](docs/flow-plus.md)。
 
 卡片、圖片、圖示與自由文字的群組操作見 [docs/grouping.md](docs/grouping.md)。
