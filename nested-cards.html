@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Juice · 巢狀卡片原型</title><link rel="stylesheet" href="assets/nested-cards.css?v=table-1"></head>
+<html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Juice · 巢狀卡片原型</title><link rel="stylesheet" href="assets/nested-cards.css?v=hierarchy-1"></head>
 <body>
 <header><div class="brand">Juice <span>巢狀卡片 · 本機原型</span></div><div class="tools"><button id="demo">載入驗收範例</button><button id="add">新增卡片</button><button id="toggleTable" type="button" aria-controls="tablePanel" aria-expanded="true">隱藏表格</button><button id="collapse">全部收合</button><button id="save">儲存原型</button><button id="export">下載原型 JSON</button><button id="import">匯入原型／白板副本</button><button id="sourceExport">匯出原白板</button><input id="file" type="file" accept=".json,application/json" hidden></div></header>
 <div class="notice"><span>展開 <strong>OMG → 異動 → 工作清單</strong>；每張卡可選顏色並從「操作」移除引用或刪除。既有白板資料不回寫。</span><span id="savedState" role="status"></span></div>
@@ -8,5 +8,5 @@
 <section id="tablePanel" class="table-panel" aria-labelledby="tableTitle"><div class="table-heading"><h2 id="tableTitle">巢狀資料表 <span>唯讀</span></h2><p id="tableCount" aria-live="polite"></p></div><div class="table-scroll"><table aria-label="巢狀資料唯讀表"><thead><tr><th scope="col">名稱</th><th scope="col">類型／用途</th><th scope="col">所在位置</th><th scope="col">狀態</th><th scope="col">負責人</th><th scope="col">日期</th><th scope="col">ID</th></tr></thead><tbody id="tableRows"></tbody></table></div></section>
 <footer><span>拖曳卡片把手自由編排 · 滾輪平移／Ctrl 或 ⌘＋滾輪縮放 · 展開時向下避讓，收合恢復基準位置</span><div><button id="zoomOut" aria-label="縮小白板">−</button><span id="zoom">90%</span><button id="zoomIn" aria-label="放大白板">＋</button><button id="fit">符合視窗</button></div></footer>
 <dialog id="picker"><form id="pickerForm"><h2 id="pickerTitle"></h2><div id="pickerFields"></div><p id="pickerError" role="alert"></p><div class="dialog-actions"><button type="button" id="pickerCancel">取消</button><button type="submit">確認</button></div></form></dialog>
-<script id="peleLib" async src="https://cdn.jsdelivr.net/npm/pele@1.9.0/dist/pele.global.js"></script><script src="assets/core.js"></script><script src="assets/pele-flow.js"></script><script src="assets/nested-core.js?v=manage-1"></script><script src="assets/nested-app.js?v=table-1"></script>
+<script id="peleLib" async src="https://cdn.jsdelivr.net/npm/pele@1.9.0/dist/pele.global.js"></script><script src="assets/core.js"></script><script src="assets/pele-flow.js"></script><script src="assets/nested-core.js?v=manage-1"></script><script src="assets/nested-app.js?v=hierarchy-1"></script>
 </body></html>
