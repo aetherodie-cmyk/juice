@@ -1,6 +1,6 @@
 # JUICE-UI-001 · 巢狀卡片與原地展開 MVP
 
-本機入口：`http://127.0.0.1:4200/nested-cards.html`。分支 `codex/juice-ui-001-nested-cards`；不合併 main、不推送、不部署。本頁不是 Workspace 的新表格頁，也不改寫正式白板。
+本機入口：`http://127.0.0.1:4200/nested-cards.html`。此原型以功能分支接續開發，不合併 main、不部署。本頁不是 Workspace 的新表格頁，也不改寫正式白板。
 
 ## 驗收步驟
 
@@ -24,7 +24,7 @@
 | 欄位 | 意義 |
 |---|---|
 | board | 輸入白板的完整原始 JSON，包含未知欄位、Classic／Flow Plus 區塊與連線；不將 normalize 的顯示結果覆寫回去。 |
-| objects | 容器或工作各一筆，穩定 ID。工作含 title、status、owner、dueDate、description、revision。 |
+| objects | 容器或工作各一筆，穩定 ID。容器可選 `purpose`（`general`、`project`、`feature`、`work-group`）；工作含 title、status、owner、dueDate、description、revision。 |
 | memberships | 穩定引用 ID、containerId、objectId。多容器可指向相同工作；同一容器不可重複加入同一物件，循環引用拒絕。 |
 | placements | 頂層畫布實例、物件 ID、寬度與基準座標；不是複製物件。 |
 | boardPositions | 使用者在原型中拖動舊卡時的位置覆層；`board.cards` 的座標不變。 |
@@ -33,6 +33,12 @@
 儲存只用獨立 key `juice-nested-prototype-v1`，且僅在使用者按「儲存原型」時寫入。不讀寫 `sju-whiteboard-*`、`sju-workspace-meta`、IndexedDB 或 Google Drive。下載成功只代表交給瀏覽器，需自行確認檔案保存完成；瀏覽器容量不足時保留未存狀態，可改下載 JSON。
 
 **匯出原白板** 只取出原始 `board`，所以與匯入時相同；巢狀物件及原型中的拖動需由「下載原型 JSON」保存。巢狀原型 JSON 不是正式白板的匯入格式，勿直接拿去覆蓋正式白板。
+
+## 用途、層級與共用引用
+
+容器的用途是可選標籤，不限制巢狀深度或父子種類。舊版 v1 原型沒有 `purpose` 時仍可載入，介面顯示「一般容器」，原始 JSON 不會只因開啟而被補寫。新容器可在建立時選用途；卡面選單可隨時修改，同一容器的所有引用會顯示相同用途。工作卡顯示「工作」而不需要另一個用途欄位。
+
+容器與工作卡面會顯示目前引用位置的上層路徑，例如「OMG › 異動 › 工作清單」。同一工作在多個容器出現時，兩張卡面各顯示自己的路徑與醒目的「共用於 2 處」提示；它們仍指向同一工作 ID，修改狀態或負責人會同步。這些路徑是依 `placements`、`memberships` 即時計算的呈現資訊，並未複製工作或改變引用資料。正式白板整合方案見 [nested-cards-integration.md](nested-cards-integration.md)。
 
 ## 避讓規則
 
@@ -51,3 +57,5 @@
 測試命令：`npm run check`、`npm run test:nested`。獨立測試伺服器在 4203，不重用其他 checkout 的服務。單元與瀏覽器測試涵蓋巢狀路徑、共用資料、循環拒絕、避讓與還原、JSON 原樣往返、保存重載、舊資料與儲存隔離、文字安全、新增與引用、窄畫面。既有功能回歸使用 `npm run test:workspace:regression`；整體結果仍需區分已知白板剪貼簿案例。
 
 2026-10-25 本機驗證：語法檢查通過；巢狀資料單元測試 9／9、介面測試 14／14 通過。全站回歸 131 通過、1 失敗：既有 `tests/whiteboard.spec.cjs:194` 的剪貼簿貼圖案例未生成 `.imgobj.below`。該案例先前已在未修改的基線重現，本次沒有修改正式白板程式來繞過它。原型新增卡片會先找空位，避免蓋住既有卡片的展開操作。
+
+用途與路徑增量驗證：巢狀資料單元測試 10／10、介面測試 16／16 通過；本次驗收圖見 [用途、路徑與共用引用截圖](screenshots/nested-purpose-path.png)。同日首次全站回歸為 131 通過、1 失敗；失敗改出現在 `tests/whiteboard.spec.cjs:65` 的流程卡儲存案例，單獨重跑通過。隨後執行 PR 所用的 `npm test`，134／134 通過。這些波動案例均未涉及本次修改的巢狀卡片模組。
