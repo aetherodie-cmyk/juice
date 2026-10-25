@@ -33,6 +33,7 @@
       ok(o.scope==null||['in','out'].includes(o.scope),'階段範圍不正確');
     }
     if(d.colorRules!=null)validateRules(d.colorRules);
+    ok(d.ui.layout==null||['free','compact'].includes(d.ui.layout),'白板布局設定不正確');
     if(d.ui.layerOrder!=null){list(d.ui.layerOrder,1000,'圖層順序');const layers=new Set();for(const key of d.ui.layerOrder){ok(typeof key==='string'&&/^(?:[bnp]:|s:(?:image|note|icon):)[A-Za-z0-9_-]{1,100}$/.test(key)&&!layers.has(key),'圖層順序格式不正確或重複');layers.add(key);}}
     if(d.ui.list!=null){const v=d.ui.list;ok(obj(v),'清單設定不正確');ok(['work','structure'].includes(v.view),'清單視角不正確');num(v.width,300,1000);ok(typeof v.visible==='boolean'&&typeof v.fullscreen==='boolean','清單顯示設定不正確');ok(['title','status','owner','dueDate','scope'].includes(v.sort),'排序欄位不正確');ok(typeof v.desc==='boolean','排序方向不正確');text(v.search,200,'搜尋');text(v.owner,100,'負責人篩選');ok(['all','unknown','todo','doing','blocked','done'].includes(v.status),'狀態篩選不正確');ok(['all','unknown','in','out'].includes(v.scope),'範圍篩選不正確');list(v.columns,9,'欄位');ok(v.columns.includes('title')&&new Set(v.columns).size===v.columns.length&&v.columns.every(x=>['title','status','owner','dueDate','scope','primary','references','id'].includes(x)),'顯示欄位不正確');list(v.collapsed,500,'結構收合');for(const path of v.collapsed)text(path,1200,'收合路徑');}
     if(d.native!=null){const N=typeof module==='object'&&module.exports?require('./workspace-native-core.js'):window.JuiceWorkspaceNativeCore;d.native=N.validate(d.native,d);}
