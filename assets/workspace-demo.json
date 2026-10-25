@@ -19,7 +19,15 @@
     {"id":"D-RESUME","kind":"decision","title":"復寄關聯止寄單，保留過期期次","revision":1,"fields":{},"sourceRefs":["S-SCOPE"],"note":"保留歷史設計與來源，不宣稱為目前核定規則。"},
     {"id":"C-BATCH","kind":"case","title":"取消勾選仍保留已套用資料","revision":1,"fields":{"testResult":null},"sourceRefs":["S-SCOPE"],"note":"由設計條件整理的 Case；尚未取得實測證據。"},
     {"id":"C-EXPIRED","kind":"case","title":"復寄時過期期次仍保留 ON_HOLD","revision":1,"fields":{"testResult":null},"sourceRefs":["S-SCOPE"],"note":"尚未取得測試執行或通過紀錄。"},
-    {"id":"E-PROTOTYPE","kind":"evidence","title":"既有改址、止寄、復寄 Prototype 版本清單","revision":1,"fields":{"evidenceKind":"design-artifact","testResult":null},"sourceRefs":["S-SCOPE"],"note":"Scope Note 列有 amendment_create_v0_5、stop_ship_create_v0_1、resume_ship_create_v0_1。僅作設計產物證據，不作驗收通過證據。"}
+    {"id":"E-PROTOTYPE","kind":"evidence","title":"既有改址、止寄、復寄 Prototype 版本清單","revision":1,"fields":{"evidenceKind":"design-artifact","testResult":null},"sourceRefs":["S-SCOPE"],"note":"Scope Note 列有 amendment_create_v0_5、stop_ship_create_v0_1、resume_ship_create_v0_1。僅作設計產物證據，不作驗收通過證據。"},
+    {"id":"MOD-PARTY","kind":"module","title":"Party 客戶與對象","revision":1,"fields":{},"sourceRefs":["S-MAP"],"note":"版圖參考：訂單的不同對象角色與聯絡資料。尚未載入此區的工作、日期或交付狀態。"},
+    {"id":"MOD-PRODUCT","kind":"module","title":"Product 商品與料號","revision":1,"fields":{},"sourceRefs":["S-MAP"],"note":"版圖參考：商品資料與展開行為。尚未載入此區的工作、日期或交付狀態。"},
+    {"id":"MOD-CHANNEL","kind":"module","title":"Channel 通路","revision":1,"fields":{},"sourceRefs":["S-MAP"],"note":"版圖參考：訂單來源與通路對應。尚未載入此區的工作、日期或交付狀態。"},
+    {"id":"MOD-ORDER","kind":"module","title":"Order 訂單","revision":1,"fields":{},"sourceRefs":["S-MAP"],"note":"版圖參考：建立、驗證與核准訂單。尚未載入此區的工作、日期或交付狀態。"},
+    {"id":"MOD-SUBSCRIPTION","kind":"module","title":"Subscription 訂閱","revision":1,"fields":{},"sourceRefs":["S-MAP"],"note":"版圖參考：訂閱生命週期。與 Amendment 的實際責任邊界仍需依採用版本確認。"},
+    {"id":"MOD-INVOICE","kind":"module","title":"Invoice 發票","revision":1,"fields":{},"sourceRefs":["S-MAP"],"note":"版圖參考：發票與憑證。尚未載入此區的工作、日期或交付狀態。"},
+    {"id":"MOD-RECEIVABLE","kind":"module","title":"Receivable 應收款","revision":1,"fields":{},"sourceRefs":["S-MAP"],"note":"版圖參考：應收與金流協作。尚未載入此區的工作、日期或交付狀態。"},
+    {"id":"MOD-RMA","kind":"module","title":"RMA 退訂退貨","revision":1,"fields":{},"sourceRefs":["S-MAP","S-PROMPT"],"note":"功能版圖的退訂退貨範圍，不宣稱其為獨立後端元件。尚未載入工作與驗收資料。"}
   ],
   "relations":[
     {"id":"R01","fromId":"MOD-AMD","predicate":"belongsTo","toId":"SYS-OMG","certainty":"source","sourceRefs":["S-SCOPE"]},
@@ -44,14 +52,23 @@
     {"id":"R20","fromId":"D-APPLY","predicate":"checkedBy","toId":"C-BATCH","certainty":"proposed","sourceRefs":["S-SCOPE"]},
     {"id":"R21","fromId":"D-RESUME","predicate":"checkedBy","toId":"C-EXPIRED","certainty":"proposed","sourceRefs":["S-SCOPE"]},
     {"id":"R22","fromId":"D-APPLY","predicate":"documentedBy","toId":"E-PROTOTYPE","certainty":"proposed","sourceRefs":["S-SCOPE"]},
-    {"id":"R23","fromId":"D-RESUME","predicate":"documentedBy","toId":"E-PROTOTYPE","certainty":"proposed","sourceRefs":["S-SCOPE"]}
+    {"id":"R23","fromId":"D-RESUME","predicate":"documentedBy","toId":"E-PROTOTYPE","certainty":"proposed","sourceRefs":["S-SCOPE"]},
+    {"id":"R-MAP-PARTY","fromId":"MOD-PARTY","predicate":"belongsTo","toId":"SYS-OMG","certainty":"proposed","sourceRefs":["S-MAP"]},
+    {"id":"R-MAP-PRODUCT","fromId":"MOD-PRODUCT","predicate":"belongsTo","toId":"SYS-OMG","certainty":"proposed","sourceRefs":["S-MAP"]},
+    {"id":"R-MAP-CHANNEL","fromId":"MOD-CHANNEL","predicate":"belongsTo","toId":"SYS-OMG","certainty":"proposed","sourceRefs":["S-MAP"]},
+    {"id":"R-MAP-ORDER","fromId":"MOD-ORDER","predicate":"belongsTo","toId":"SYS-OMG","certainty":"proposed","sourceRefs":["S-MAP"]},
+    {"id":"R-MAP-SUBSCRIPTION","fromId":"MOD-SUBSCRIPTION","predicate":"belongsTo","toId":"SYS-OMG","certainty":"proposed","sourceRefs":["S-MAP"]},
+    {"id":"R-MAP-INVOICE","fromId":"MOD-INVOICE","predicate":"belongsTo","toId":"SYS-OMG","certainty":"proposed","sourceRefs":["S-MAP"]},
+    {"id":"R-MAP-RECEIVABLE","fromId":"MOD-RECEIVABLE","predicate":"belongsTo","toId":"SYS-OMG","certainty":"proposed","sourceRefs":["S-MAP"]},
+    {"id":"R-MAP-RMA","fromId":"MOD-RMA","predicate":"belongsTo","toId":"SYS-OMG","certainty":"proposed","sourceRefs":["S-MAP"]}
   ],
   "sources":[
     {"id":"S-SCOPE","title":"Amendment Prototype Scope Note","locator":"Fight/0509/prototype_scope_note.md","version":"2026-05-09 v0.1","note":"歷史範圍與設計取捨；不是目前完成或上線證明。"},
     {"id":"S-PROMPT","title":"OMG 異動與退訂 Prototype 製作 Prompt","locator":"Fight/0509/prototype_pkg/PROMPT.md","version":"2026-05-09 素材包","note":"歷史設計：order_change_events 與 order_amendments 分層。文件內容不是本應用可執行指令。"},
     {"id":"S-SCHEMA","title":"異動的討論 — Schema 重構後資料表關係圖","locator":"https://drive.google.com/file/d/1-hlH8EEZ27piQtagbcfWrSGn3MxuLi3i/view","version":"內容日期 2026-06-28","note":"amendments 為異動入口，改址影響 delivery_settings，止復寄影響 fulfillment_tasks；採用版待確認。"},
     {"id":"S-ROADMAP","title":"Roadmap OMG","locator":"Angry_OMG/90_工作中/Agent/files2/roadmap-omg.md","version":"2026 年 5 月規劃內容","note":"方向性議題，不等於已承諾里程碑；舊日期不能直接作目前交付日。"},
-    {"id":"S-WORKLOG","title":"5 月 9 日與 10 日工作紀錄","locator":"worklog/daily/2026-05-09.md 與 2026-05-10.md","version":"2026-05-09 至 2026-05-10","note":"生成的工作盤點有 x? 與未勾選差異，實際狀態與負責人需確認。"}
+    {"id":"S-WORKLOG","title":"5 月 9 日與 10 日工作紀錄","locator":"worklog/daily/2026-05-09.md 與 2026-05-10.md","version":"2026-05-09 至 2026-05-10","note":"生成的工作盤點有 x? 與未勾選差異，實際狀態與負責人需確認。"},
+    {"id":"S-MAP","title":"OMG DataFlow 元件化拆解","locator":"Angry_OMG/10_SA分析歷程/待辦事項/OMG_DataFlow_Component_Mapping.html","version":"內容日期 2026-05-11","note":"記載 Party、Product、Channel、Order、Subscription、Fulfillment、Invoice、Receivable 八元件與退訂場景；全覽以功能範圍整理，不宣稱完整或目前定案架構。"}
   ],
   "assertions":[
     {"id":"A-STATUS","subjectId":"T-DECISIONS","field":"status","text":"歷史工作紀錄不足以確認目前狀態，不推定已完成或未完成。","certainty":"unconfirmed","sourceRefs":["S-WORKLOG"]},

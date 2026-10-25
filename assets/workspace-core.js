@@ -31,6 +31,19 @@
   function serialize(d){const raw=JSON.stringify(validate(d),null,2);assert(new TextEncoder().encode(raw).length<=MAX_BYTES,'檔案超過 2 MB 限制，請先拆分工作空間');return raw;}
   function connected(d,objectId,predicate){const ids=new Set(d.relations.filter(r=>(!predicate||r.predicate===predicate)&&(r.fromId===objectId||r.toId===objectId)).map(r=>r.fromId===objectId?r.toId:r.fromId));return d.objects.filter(o=>ids.has(o.id));}
   function tasksFor(d,objectId){return connected(d,objectId).filter(o=>o.kind==='task');}
+  function scopeForModule(d,moduleId){
+    const module=d.objects.find(o=>o.id===moduleId&&o.kind==='module');if(!module)return [];
+    const ids=new Set([moduleId]);
+    for(const r of d.relations)if(r.toId===moduleId&&r.predicate==='belongsTo'){const o=d.objects.find(x=>x.id===r.fromId);if(o&&!['system','module'].includes(o.kind))ids.add(o.id);}
+    let changed=true;while(changed){changed=false;for(const r of d.relations){if(!ids.has(r.fromId)||!['supports','affects','produces','checkedBy','documentedBy'].includes(r.predicate))continue;const o=d.objects.find(x=>x.id===r.toId);if(o&&!['system','module','task'].includes(o.kind)&&!ids.has(o.id)){ids.add(o.id);changed=true;}}}
+    return d.objects.filter(o=>ids.has(o.id));
+  }
+  function confirmedSchedule(o){
+    const s=o.fields.schedule;if(!object(s)||s.confirmed!==true)return null;
+    const valid=x=>typeof x==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(x)&&Number.isFinite(Date.parse(x))&&new Date(x).toISOString().slice(0,10)===x;
+    const start=s.startDate||s.endDate,end=s.endDate||s.startDate;
+    return valid(start)&&valid(end)&&start<=end?{start,end}:null;
+  }
   function patchTask(d,objectId,fields,now=new Date().toISOString()){
     const next=validate(d),task=next.objects.find(o=>o.id===objectId);assert(task?.kind==='task','只能修改任務物件');assert(object(fields)&&Object.keys(fields).every(k=>['status','owner'].includes(k)),'只能修改狀態與負責人');
     const before={status:task.fields.status,owner:task.fields.owner},after={...before,...fields};after.owner=typeof after.owner==='string'?after.owner.trim()||null:after.owner;
@@ -42,5 +55,5 @@
     }
     validate(next);serialize(next);return next;
   }
-  return {FORMAT,VERSION,MAX_BYTES,KINDS,STATUSES,VIEWS,validate,parse,serialize,connected,tasksFor,patchTask};
+  return {FORMAT,VERSION,MAX_BYTES,KINDS,STATUSES,VIEWS,validate,parse,serialize,connected,tasksFor,scopeForModule,confirmedSchedule,patchTask};
 });
