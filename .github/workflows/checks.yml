@@ -18,6 +18,7 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run check
       - run: npm run test:workspace:unit
+      - run: npm run test:nested:unit
       - run: npm test
       - uses: actions/upload-artifact@v4
         if: failure()

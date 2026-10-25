@@ -1,5 +1,7 @@
 # 聚思白板（Juice）
 
+JUICE-UI-001 本機巢狀卡片原型：`nested-cards.html`。操作、獨立存檔與資料保護方式見 [巢狀卡片 MVP](docs/nested-cards.md)，不改寫正式白板格式。
+
 獨立 Workspace 的「OMG 功能全覽 → 功能詳細工作／流程／時程」介面與資料契約見 [Workspace 探索介面 V1](docs/workspace.md)。僅在本機／開發分支使用，資料以獨立 JSON 保存，不讀寫既有白板或 Google Drive。
 
 Flow Plus Phase 1 的使用方式與資料契約見 [docs/flow-plus.md](docs/flow-plus.md)。
