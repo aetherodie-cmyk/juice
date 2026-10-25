@@ -39,6 +39,67 @@ test('compact table shows unique work with its primary path and keeps filters on
   await expect(page.locator('#tableRows tr[data-type=container]')).not.toHaveCount(0);
   expect(errors).toEqual([]);
 });
+test('committed Workspace edits auto-save without touching Classic storage',async({page})=>{
+  await boot(page,{compact:true});
+  await page.evaluate(()=>localStorage.setItem('sju-whiteboard-v2','classic-sentinel'));
+  await page.locator('#tableRows [data-object-id="T-PROTOTYPE"] [data-column="status"] select').selectOption('doing');
+  await expect.poll(()=>page.evaluate(()=>JSON.parse(localStorage.getItem('juice-nested-prototype-v1')||'null')?.objects.find(item=>item.id==='T-PROTOTYPE')?.status)).toBe('doing');
+  await expect(page.locator('#savedState')).toContainText('原型已儲存');
+  await page.reload();
+  await expect(page.locator('#tableRows [data-object-id="T-PROTOTYPE"] [data-column="status"] select')).toHaveValue('doing');
+  expect(await page.evaluate(()=>localStorage.getItem('sju-whiteboard-v2'))).toBe('classic-sentinel');
+});
+test('unfinished detail form survives reload as a separate draft and confirmed edits auto-save',async({page})=>{
+  await boot(page,{compact:true});await page.getByRole('button',{name:'展開 OMG',exact:true}).click();await page.getByRole('button',{name:'展開 異動',exact:true}).click();await page.getByRole('button',{name:'展開 工作清單',exact:true}).click();
+  await page.locator('[data-task-id="T-PROTOTYPE"] .task-title').first().click();
+  const details=page.locator('[data-details-for="T-PROTOTYPE"]');await details.locator('[data-field="title"]').fill('Prototype 草稿');await details.locator('textarea').fill('尚未確認的說明');
+  await expect(page.locator('#savedState')).toContainText('詳細草稿已暫存');
+  const draftKey=await page.evaluate(()=>Object.keys(localStorage).find(key=>key.startsWith('juice-nested-prototype-v1-draft-v1:')));
+  expect(draftKey).toBeTruthy();
+  await expect.poll(()=>page.evaluate(()=>!!localStorage.getItem('juice-nested-prototype-v1'))).toBe(true);
+  page.once('dialog',dialog=>dialog.accept());await page.reload();
+  await expect(page.locator('[data-details-for="T-PROTOTYPE"] [data-field="title"]')).toHaveValue('Prototype 草稿');
+  await expect(page.locator('[data-details-for="T-PROTOTYPE"] textarea')).toHaveValue('尚未確認的說明');
+  await expect(page.locator('#savedState')).toContainText('詳細草稿已暫存');
+  await page.locator('[data-details-for="T-PROTOTYPE"] button[type="submit"]').click();
+  await expect.poll(()=>page.evaluate(()=>JSON.parse(localStorage.getItem('juice-nested-prototype-v1'))?.objects.find(item=>item.id==='T-PROTOTYPE')?.title)).toBe('Prototype 草稿');
+  expect(await page.evaluate(key=>localStorage.getItem(key),draftKey)).toBeNull();
+  await page.reload();await expect(page.locator('#tableRows [data-object-id="T-PROTOTYPE"]')).toContainText('Prototype 草稿');
+});
+test('loading the demo never auto-overwrites an existing prototype',async({page})=>{
+  await boot(page,{compact:true});await page.locator('#tableRows [data-object-id="T-PROTOTYPE"] [data-column="status"] select').selectOption('done');
+  await expect.poll(()=>page.evaluate(()=>JSON.parse(localStorage.getItem('juice-nested-prototype-v1')||'null')?.objects.find(item=>item.id==='T-PROTOTYPE')?.status)).toBe('done');
+  await page.locator('#demo').click();await expect(page.locator('#savedState')).toContainText('自動儲存已暫停');
+  await page.locator('#tableRows [data-object-id="T-PROTOTYPE"] [data-column="status"] select').selectOption('doing');
+  await page.waitForTimeout(1000);
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('juice-nested-prototype-v1')).objects.find(item=>item.id==='T-PROTOTYPE').status)).toBe('done');
+  await page.locator('#save').click();
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('juice-nested-prototype-v1')).objects.find(item=>item.id==='T-PROTOTYPE').status)).toBe('doing');
+});
+test('an unreadable saved prototype is never replaced by automatic writes',async({page})=>{
+  await page.addInitScript(()=>localStorage.setItem('juice-nested-prototype-v1','unreadable-original'));
+  await page.route('https://cdn.jsdelivr.net/**',route=>route.abort());await page.goto('/nested-cards.html');
+  await expect(page.locator('#message')).toContainText('原型存檔無法讀取');
+  await page.locator('#tableRows [data-object-id="T-PROTOTYPE"] [data-column="status"] select').selectOption('doing');
+  await page.waitForTimeout(1000);
+  expect(await page.evaluate(()=>localStorage.getItem('juice-nested-prototype-v1'))).toBe('unreadable-original');
+  await expect(page.locator('#savedState')).toContainText('自動儲存已暫停');
+  page.once('dialog',dialog=>dialog.dismiss());await page.locator('#save').click();
+  expect(await page.evaluate(()=>localStorage.getItem('juice-nested-prototype-v1'))).toBe('unreadable-original');
+});
+test('a stale tab pauses auto-save rather than overwriting a newer tab',async({page})=>{
+  await page.route('https://cdn.jsdelivr.net/**',route=>route.abort());await page.goto('/nested-cards.html');
+  const stale=await page.context().newPage();
+  try{
+    await stale.route('https://cdn.jsdelivr.net/**',route=>route.abort());await stale.goto('/nested-cards.html');
+    await page.locator('#tableRows [data-object-id="T-PROTOTYPE"] [data-column="status"] select').selectOption('done');
+    await expect.poll(()=>page.evaluate(()=>JSON.parse(localStorage.getItem('juice-nested-prototype-v1')||'null')?.objects.find(item=>item.id==='T-PROTOTYPE')?.status)).toBe('done');
+    await expect(stale.locator('#savedState')).toContainText('自動儲存已暫停');
+    await stale.locator('#tableRows [data-object-id="T-PROTOTYPE"] [data-column="status"] select').selectOption('doing');
+    await stale.waitForTimeout(1000);
+    expect(await stale.evaluate(()=>JSON.parse(localStorage.getItem('juice-nested-prototype-v1')).objects.find(item=>item.id==='T-PROTOTYPE').status)).toBe('done');
+  }finally{await stale.close();}
+});
 test('OMG → 異動 → 工作清單 expands in place, with shared work in another container',async({page})=>{const errors=await boot(page);const url=page.url();await expand(page);await expect(page.locator('[data-task-id="T-PROTOTYPE"]')).toHaveCount(2);expect(page.url()).toBe(url);await page.locator('[data-task-id="T-PROTOTYPE"] .task-title').first().click();await expect(page.locator('[data-details-for="T-PROTOTYPE"]')).toBeVisible();await expect(page.locator('[data-details-for="T-PROTOTYPE"] textarea')).toHaveValue(/截圖中的示意值不視為事實/);expect(errors).toEqual([]);});
 test('UI-007 keeps ownership and unique work counts readable after four levels expand',async({page})=>{
   await boot(page);await expand(page);
@@ -65,7 +126,7 @@ test('quick status and owner edits update every reference without copying work',
 test('expanded rectangles avoid all cards; collapsing restores exact baseline coordinates and links',async({page})=>{await boot(page);await expect(page.locator('[data-legacy-id="legacy-order"]')).toHaveCSS('top','400px');const baseline=await page.locator('.board-card').evaluateAll(nodes=>nodes.map(n=>({id:n.dataset.legacyId||n.dataset.placementId,x:n.style.left,y:n.style.top})));const source=await download(page,'#sourceExport');await expand(page);await expect.poll(async()=>parseFloat(await page.locator('[data-legacy-id="legacy-order"]').evaluate(n=>n.style.top))).toBeGreaterThan(400);const root=await page.locator('[data-placement-id="P-OMG"]').boundingBox(),others=await page.locator('.board-card:not([data-placement-id="P-OMG"])').all();for(const other of others){const b=await other.boundingBox();expect(root.x<b.x+b.width&&root.x+root.width>b.x&&root.y<b.y+b.height&&root.y+root.height>b.y).toBe(false);}await page.locator('#collapse').click();await expect(page.locator('[data-legacy-id="legacy-order"]')).toHaveCSS('top','400px');expect(await page.locator('.board-card').evaluateAll(nodes=>nodes.map(n=>({id:n.dataset.legacyId||n.dataset.placementId,x:n.style.left,y:n.style.top})))).toEqual(baseline);expect(await download(page,'#sourceExport')).toEqual(source);await expect(page.locator('[data-link-id]')).toHaveCount(2);});
 test('explicit save reloads nested UI, task changes and geometry in an isolated key',async({page})=>{await boot(page);await expand(page);await page.locator('[data-task-id="T-PROTOTYPE"] [data-quick-field="status"]').first().selectOption('doing');await page.locator('#save').click();await expect(page.locator('#message')).toContainText('已保存');await page.reload();await expect(page.locator('[data-task-id="T-PROTOTYPE"]')).toHaveCount(2);await expect(page.locator('[data-task-id="T-PROTOTYPE"] [data-quick-field="status"]').first()).toHaveValue('doing');await expect.poll(async()=>parseFloat(await page.locator('[data-legacy-id="legacy-order"]').evaluate(n=>n.style.top))).toBeGreaterThan(400);});
 test('raw whiteboard import/export preserves all original fields and Classic / Flow Plus blocks',async({page})=>{await boot(page);const board={schemaVersion:3,boardId:'imported',cards:[{id:'classic',x:4,y:5,w:260,title:'舊卡',color:'paper',blocks:[{id:'flow',type:'diagram',html:'flowchart LR\n A --> B',aiContext:'{"flowPlus":{"version":1}}',diagramPositions:'original'}],custom:'keep'}],links:[],unknown:{preserve:true},view:{x:1,y:2,zoom:1},savedAt:123};await page.locator('#file').setInputFiles({name:'board.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(board))});await expect(page.locator('[data-legacy-id="classic"]')).toBeVisible();expect(await download(page,'#sourceExport')).toEqual(board);const bundled=await download(page,'#export');expect(bundled.board).toEqual(board);await page.locator('#file').setInputFiles({name:'bundle.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(bundled))});expect(await download(page,'#sourceExport')).toEqual(board);});
-test('prototype never reads/writes formal whiteboard keys, opens IndexedDB or accesses Drive',async({page})=>{await page.addInitScript(()=>{localStorage.setItem('sju-whiteboard-v2','{"formal":"sentinel"}');window.touched=[];for(const key of ['getItem','setItem','removeItem','clear']){const old=Storage.prototype[key];Storage.prototype[key]=function(...args){window.touched.push([key,args[0]]);return old.apply(this,args);};}indexedDB.open=()=>{throw new Error('must not open formal IndexedDB');};});const requests=[];page.on('request',r=>requests.push(r.url()));const errors=await boot(page);await expand(page);await page.locator('#save').click();expect(await page.evaluate(()=>window.touched.every(([,key])=>key==='juice-nested-prototype-v1'))).toBe(true);expect(requests.some(url=>/googleapis|accounts.google/.test(url))).toBe(false);expect(errors).toEqual([]);});
+test('prototype never reads/writes formal whiteboard keys, opens IndexedDB or accesses Drive',async({page})=>{await page.addInitScript(()=>{localStorage.setItem('sju-whiteboard-v2','{"formal":"sentinel"}');window.touched=[];for(const key of ['getItem','setItem','removeItem','clear']){const old=Storage.prototype[key];Storage.prototype[key]=function(...args){window.touched.push([key,args[0]]);return old.apply(this,args);};}indexedDB.open=()=>{throw new Error('must not open formal IndexedDB');};});const requests=[];page.on('request',r=>requests.push(r.url()));const errors=await boot(page);await expand(page);await page.locator('#save').click();expect(await page.evaluate(()=>window.touched.every(([,key])=>key==='juice-nested-prototype-v1'||key?.startsWith('juice-nested-prototype-v1-draft-v1:')))).toBe(true);expect(requests.some(url=>/googleapis|accounts.google/.test(url))).toBe(false);expect(errors).toEqual([]);});
 test('invalid cyclic imports do not replace the current prototype',async({page})=>{await boot(page);const d=C.seed();d.memberships.push({id:'cycle',containerId:'C-WORK',objectId:'C-OMG'});await page.locator('#file').setInputFiles({name:'bad.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(d))});await expect(page.locator('#message')).toHaveAttribute('role','alert');await expect(page.getByRole('button',{name:'展開 OMG',exact:true})).toBeVisible();});
 test('details edit title/date/description propagates and blocks saving unfinished drafts',async({page})=>{await boot(page);await expand(page);await page.locator('[data-task-id="T-PROTOTYPE"] .task-title').first().click();const form=page.locator('[data-details-for="T-PROTOTYPE"]');await form.locator('[data-field="title"]').fill('Prototype 複核');await form.locator('[data-field="dueDate"]').fill('2026-10-25');await form.locator('textarea').fill('只作測試資料');await page.locator('#save').click();await expect(page.locator('#message')).toContainText('先儲存或還原');await form.getByRole('button',{name:'儲存詳細資料'}).click();for(const ref of await page.locator('[data-task-id="T-PROTOTYPE"]').all()){await expect(ref.locator('.task-title')).toHaveText('Prototype 複核');await expect(ref.locator('.task-date')).toContainText('2026-10-25');}await page.locator('#save').click();await page.reload();await expect(page.locator('[data-task-id="T-PROTOTYPE"] .task-title').first()).toHaveText('Prototype 複核');});
 test('a new reference uses the existing work object and cycle creation is refused',async({page})=>{await boot(page);await page.getByRole('button',{name:'展開 驗收準備 · 共用引用',exact:true}).click();await openActions(page.locator('[data-container-id="C-REVIEW"]'));await page.locator('[data-container-id="C-REVIEW"] > .card-head .add-reference').click();await page.locator('#pickerFields select').selectOption('T-DEVELOP');await page.locator('#pickerForm button[type="submit"]').click();const d=await download(page,'#export');expect(d.objects.filter(o=>o.id==='T-DEVELOP')).toHaveLength(1);expect(d.memberships.filter(e=>e.objectId==='T-DEVELOP')).toHaveLength(2);});
