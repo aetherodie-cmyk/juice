@@ -1,5 +1,7 @@
 # JUICE-UI-001 · 巢狀卡片與原地展開 MVP
 
+> UI-003 本機分支已改為右側可編輯工作表格／結構清單、主要歸屬與條件著色，最新操作與限制請看 [JUICE-UI-003.md](JUICE-UI-003.md)。以下保留 UI-001／002 的歷次實作記錄；其中下方唯讀表格、第二層改名等舊操作已由新版取代。UI-003 尚未部署。
+
 正式站獨立預覽：`https://aetherodie-cmyk.github.io/juice/nested-cards.html`。本機入口：`http://127.0.0.1:4200/nested-cards.html`。預覽頁不改寫正式白板，也尚未整合到正式白板畫布。
 
 ## 驗收步驟

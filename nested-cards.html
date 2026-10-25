@@ -1,12 +1,26 @@
 <!doctype html>
-<html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Juice · 巢狀卡片原型</title><link rel="stylesheet" href="assets/nested-cards.css?v=card-actions-1"></head>
+<html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Juice Workspace</title><link rel="stylesheet" href="assets/nested-cards.css?v=workspace-007"><link rel="stylesheet" href="assets/workspace-flow-builder.css"></head>
 <body>
-<header><div class="brand">Juice <span>巢狀卡片 · 本機原型</span></div><div class="tools"><button id="demo">載入驗收範例</button><button id="add">新增卡片</button><button id="toggleTable" type="button" aria-controls="tablePanel" aria-expanded="true">隱藏表格</button><button id="collapse">全部收合</button><button id="save">儲存原型</button><button id="export">下載原型 JSON</button><button id="import">匯入原型／白板副本</button><button id="sourceExport">匯出原白板</button><input id="file" type="file" accept=".json,application/json" hidden></div></header>
+<header><div class="brand">Juice <span>Workspace · UI-007</span></div><a class="version-switch" href="./">原版白板</a><div class="tools"><details id="nativeMenu"><summary>＋ 白板工具</summary><div id="nativeTools"></div></details><button id="demo">載入驗收範例</button><button id="add">新增結構卡</button><button id="toggleTable" type="button" aria-controls="tablePanel" aria-expanded="true">隱藏清單</button><button id="collapse">全部收合</button><button id="save">儲存原型</button><button id="export">下載原型 JSON</button><button id="import">匯入原型／白板副本</button><button id="sourceExport">匯出原白板</button><input id="file" type="file" accept=".json,application/json" hidden></div></header>
 <div class="notice"><span>展開 <strong>OMG → 異動 → 工作清單</strong>；點選卡片後開啟「⋮」可編輯、建立子卡片、引用或刪除。既有白板資料不回寫。</span><span id="savedState" role="status"></span></div>
 <p id="message" role="status" aria-live="polite"></p>
+<p id="nativeLinkStatus" role="status" aria-live="polite"></p>
+<div id="workspaceBody">
 <main id="canvas" aria-label="巢狀卡片白板，拖曳空白處平移"><div id="world"><svg id="links" aria-hidden="true"></svg><div id="content"></div></div></main>
-<section id="tablePanel" class="table-panel" aria-labelledby="tableTitle"><div class="table-heading"><h2 id="tableTitle">巢狀資料表 <span>唯讀</span></h2><p id="tableCount" aria-live="polite"></p></div><div class="table-scroll"><table aria-label="巢狀資料唯讀表"><thead><tr><th scope="col">名稱</th><th scope="col">類型／用途</th><th scope="col">所在位置</th><th scope="col">狀態</th><th scope="col">負責人</th><th scope="col">日期</th><th scope="col">ID</th></tr></thead><tbody id="tableRows"></tbody></table></div></section>
+<div id="listSplitter" role="separator" aria-label="調整清單寬度，方向鍵可調整" aria-orientation="vertical" tabindex="0"></div>
+<section id="tablePanel" class="table-panel" aria-labelledby="tableTitle">
+ <div class="table-heading"><h2 id="tableTitle">工作表格</h2><div><button id="listFullscreen">全畫面</button><button id="closeList" aria-label="隱藏資料清單">×</button></div></div>
+ <div class="view-tabs"><span>依階層展開 · 點名稱定位 · ⋯ 查看進階資訊</span><button id="colorRules">顏色規則</button></div>
+ <div id="workControls" class="list-controls">
+  <input id="filterSearch" aria-label="搜尋工作" placeholder="搜尋名稱與說明" maxlength="200"><input id="filterOwner" aria-label="篩選負責人" placeholder="篩選負責人" maxlength="100">
+  <select id="filterStatus" aria-label="篩選狀態"><option value="all">全部狀態</option></select><select id="filterScope" aria-label="篩選階段範圍"><option value="all">全部範圍</option><option value="in">本階段</option><option value="out">非本階段</option><option value="unknown">範圍待確認</option></select>
+  <select id="sortField" aria-label="排序欄位"><option value="title">工作名稱排序</option><option value="status">狀態排序</option><option value="owner">負責人排序</option><option value="dueDate">期限排序</option><option value="scope">範圍排序</option></select><button id="sortDirection">升冪 ↑</button><button id="clearFilters">清除篩選</button>
+  <details class="column-picker"><summary>顯示欄位</summary><div id="columnOptions"></div></details>
+ </div>
+ <p id="tableCount" aria-live="polite"></p><p id="listSummary"></p>
+ <div class="table-scroll"><table aria-label="Juice 資料清單"><thead><tr id="tableHead"></tr></thead><tbody id="tableRows"></tbody></table></div>
+</section></div>
 <footer><span>拖曳卡片把手自由編排 · 滾輪平移／Ctrl 或 ⌘＋滾輪縮放 · 展開時向下避讓，收合恢復基準位置</span><div><button id="zoomOut" aria-label="縮小白板">−</button><span id="zoom">90%</span><button id="zoomIn" aria-label="放大白板">＋</button><button id="fit">符合視窗</button></div></footer>
 <dialog id="picker"><form id="pickerForm"><h2 id="pickerTitle"></h2><div id="pickerFields"></div><p id="pickerError" role="alert"></p><div class="dialog-actions"><button type="button" id="pickerCancel">取消</button><button type="submit">確認</button></div></form></dialog>
-<script id="peleLib" async src="https://cdn.jsdelivr.net/npm/pele@1.9.0/dist/pele.global.js"></script><script src="assets/core.js"></script><script src="assets/pele-flow.js"></script><script src="assets/nested-core.js?v=card-actions-1"></script><script src="assets/nested-app.js?v=card-actions-1"></script>
+<script id="peleLib" async src="https://cdn.jsdelivr.net/npm/pele@1.9.0/dist/pele.global.js"></script><script src="assets/core.js"></script><script src="assets/pele-flow.js"></script><script src="assets/flow-builder.js"></script><script src="assets/nested-color-rules.js?v=workspace-006"></script><script src="assets/workspace-native-core.js?v=workspace-006"></script><script src="assets/nested-core.js?v=workspace-006"></script><script src="assets/nested-views.js?v=workspace-006"></script><script src="assets/workspace-native.js?v=workspace-006"></script><script src="assets/nested-app.js?v=workspace-007"></script>
 </body></html>

@@ -1,6 +1,6 @@
 # 聚思白板（Juice）
 
-巢狀卡片獨立預覽：[nested-cards.html](nested-cards.html)。用途標籤、共用引用與資料保存方式見 [巢狀卡片原型](docs/nested-cards.md)；[整合正式白板的方案](docs/nested-cards-integration.md)尚未實作。
+原版白板入口為 [index.html](index.html)；Workspace 入口為 [workspace.html](workspace.html)，舊的 [nested-cards.html](nested-cards.html) 仍可開啟同一工作區。Workspace 包含樹狀工作表格、共用引用、自由物件、流程圖與 UI-007 視覺精簡；操作及限制見 [UI-006 交接](docs/JUICE-UI-006-HANDOFF.md)。兩版的資料各自保存，不會自動同步或轉換。
 
 Flow Plus Phase 1 的使用方式與資料契約見 [docs/flow-plus.md](docs/flow-plus.md)。
 
@@ -108,4 +108,4 @@ npm test
 
 ## 部署
 
-既有 GitHub Pages 從 `main` 根目錄發布；推送到 main 可能更新正式站。沒有編譯步驟，須一起發布 HTML 與 `assets/`。本次維護不變更 Pages 設定。發布前請依維護文件完成人工授權測試及備份。
+GitHub Pages 從 `main` 根目錄發布；首頁 `/juice/` 保留原版白板，`/juice/workspace.html` 開啟 Workspace。Workspace 使用 `juice-nested-prototype-v1`，原版白板使用自己的 localStorage、IndexedDB 與 Drive 路徑。Workspace 需按「儲存原型」才寫入本機；「下載原型 JSON」可備份整個工作區。不同網址來源的瀏覽器資料不共用：從 `127.0.0.1:4210` 搬至 GitHub Pages 時，須在原站下載原型 JSON，再於新站匯入。發布前依 [維護文件](docs/maintenance.md) 完成檢查與備份；回復程式版本不會刪除或還原使用者資料。
