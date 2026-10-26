@@ -6,6 +6,10 @@ Workspace 一般文字卡可選擇七種卡片顏色。自身流程卡可編輯 
 
 Flow Plus Phase 1 的使用方式與資料契約見 [docs/flow-plus.md](docs/flow-plus.md)。
 
+第一階段流程知識白板的本機 Workspace 多白板引用、既有流程導入、固定版本與手動更新見 [P0 驗收版](docs/FLOW-KNOWLEDGE-P0.md)；Classic 保持原樣，實際 OMG 三白板內容仍待使用者驗收。
+
+Workspace 頂部依用途分為「切換白板」「流程知識庫」「＋ 新增」「檢視」「資料」；儲存、完整原型備份與匯入都在「資料」，驗收範例藏於其中的「驗收工具」。
+
 卡片、圖片、圖示與自由文字的群組操作見 [docs/grouping.md](docs/grouping.md)。
 
 自訂圖示的保存位置與選單操作見 [docs/custom-icons.md](docs/custom-icons.md)。
@@ -110,4 +114,4 @@ npm test
 
 ## 部署
 
-GitHub Pages 從 `main` 根目錄發布；首頁 `/juice/` 保留原版白板，`/juice/workspace.html` 開啟 Workspace。Workspace 的已確認變更會短暫延遲後自動儲存在此瀏覽器的 `juice-nested-prototype-v1`；詳細表單輸入另暫存草稿，仍須按「儲存詳細資料」套用。匯入或載入範例不會自動覆蓋原型存檔，需按「儲存原型」確認。原版白板使用自己的 localStorage、IndexedDB 與 Drive 路徑。「下載原型 JSON」可備份整個已確認的工作區。不同網址來源的瀏覽器資料不共用：從 `127.0.0.1:4210` 搬至 GitHub Pages 時，須在原站下載原型 JSON，再於新站匯入並儲存。發布前依 [維護文件](docs/maintenance.md) 完成檢查與備份；回復程式版本不會刪除或還原使用者資料。
+GitHub Pages 從 `main` 根目錄發布；首頁 `/juice/` 保留原版白板，`/juice/workspace.html` 開啟 Workspace。Workspace 的已確認變更會短暫延遲後自動儲存在此瀏覽器的 `juice-nested-prototype-v1`；詳細表單輸入另暫存草稿，仍須按「儲存詳細資料」套用。匯入或載入範例不會自動覆蓋原型存檔，需從「資料」選單按「儲存原型」確認。原版白板使用自己的 localStorage、IndexedDB 與 Drive 路徑。「資料 → 下載完整原型 JSON」可備份整個已確認的工作區。不同網址來源的瀏覽器資料不共用：從 `127.0.0.1:4210` 搬至 GitHub Pages 時，須在原站下載原型 JSON，再於新站匯入並儲存。發布前依 [維護文件](docs/maintenance.md) 完成檢查與備份；回復程式版本不會刪除或還原使用者資料。
