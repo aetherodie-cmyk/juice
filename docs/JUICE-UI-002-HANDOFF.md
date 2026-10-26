@@ -1,6 +1,6 @@
 # JUICE-UI-002｜巢狀卡片操作介面簡化交接
 
-日期：2026-10-25。Repository：`aetherodie-cmyk/juice`。開發分支：`feature/juice-ui-002-card-actions`，以 `main` 的 `5b68291d25a7da4147aeb28d56feb426c9a3e715` 為基礎。本功能只提交至開發分支，未合併 `main`、未部署 GitHub Pages。
+日期：2026-10-25；發布狀態更新：2026-10-26。Repository：`aetherodie-cmyk/juice`。原開發分支：`feature/juice-ui-002-card-actions`，以 `main` 的 `5b68291d25a7da4147aeb28d56feb426c9a3e715` 為基礎。JUICE-UI-002 已由 [PR #15](https://github.com/aetherodie-cmyk/juice/pull/15) 合併至 `main`（合併提交 `dce6452`），並已透過 GitHub Pages 發布；正式頁面為 [nested-cards.html](https://aetherodie-cmyk.github.io/juice/nested-cards.html)。後續 `main` 另有功能更新，以下交接內容記錄 JUICE-UI-002 的原始交付範圍。
 
 ## 交付範圍
 
@@ -10,7 +10,7 @@
 
 ## 畫面與本機驗收
 
-[修改前後比較](juice-ui-002-comparison.md)使用相同的 OMG → 異動 → 工作清單 → 工作卡範例、1440 × 1100 視窗及 90% 縮放；另有[選取後選單](screenshots/juice-ui-002-selected.png)。修改前截圖來自上述 `main` 基準，修改後截圖來自本分支。
+[修改前後比較](juice-ui-002-comparison.md)使用相同的 OMG → 異動 → 工作清單 → 工作卡範例、1440 × 1100 視窗及 90% 縮放；另有[選取後選單](screenshots/juice-ui-002-selected.png)。修改前截圖來自上述 `main` 基準，修改後截圖來自原開發分支。正式站後續畫面可能因其他功能更新而不同。
 
 ```sh
 git clone --branch feature/juice-ui-002-card-actions https://github.com/aetherodie-cmyk/juice.git
@@ -37,4 +37,4 @@ python3 -m http.server 4200 --bind 127.0.0.1
 
 在 Node.js 22 環境：`npm run check` 通過；巢狀資料單元測試 17／17、全站 Playwright 瀏覽器測試 130／130 通過。測試涵蓋既有四層展開、共用引用、讀取與保存重載，並使用 Chromium 觸控模擬驗證選取與開選單。尚未以手機實機驗收觸控與原生顏色選擇器。
 
-這仍是獨立的 `nested-cards.html` 原型，沒有整合進正式白板畫布，也沒有同步至 Google Drive。若後續要發布，先核對最新 `main`、執行 PR CI，取得該次正式部署授權後才合併；不要把推送開發分支視為已發布。
+JUICE-UI-002 的原始實作位於 `nested-cards.html`，沒有改動正式白板資料格式或 Google Drive 同步。PR #15 的檢查已通過並合併；目前公開站已可看到選取後的「⋮」操作。接續開發請重新核對最新 `main`，不要以原開發分支代替目前正式站版本。
