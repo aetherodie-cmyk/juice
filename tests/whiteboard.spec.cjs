@@ -4,14 +4,14 @@ const omgExample=require('./fixtures/ORDER-MIDDLE-OMG-v2-example.json');
 const omgMermaid=fs.readFileSync(require.resolve('./fixtures/ORDER-MIDDLE-OMG-swimlane.mmd'),'utf8');
 const empty=(title='')=>({cards:title?[{id:'card1',title,blocks:[{id:'block1',type:'text',html:'Hello'}],tags:[]}]:[],links:[],groups:[],images:[],view:{x:0,y:0,zoom:1},savedAt:123});
 async function mockDrive(page,{writeStatus=200,bad=false,name='Board A.json'}={}){
-  const api={files:{a:JSON.stringify(empty('Remote A')),b:bad?'not json':JSON.stringify(empty('Remote B')),ia:JSON.stringify({version:1,inbox:[]}),ib:JSON.stringify({version:1,inbox:[]})},writes:[],reads:[],writeStatus,listPage:0,created:[],user:{permissionId:'user-a',emailAddress:'alice@example.test',displayName:'Alice'}};
+  const api={files:{a:JSON.stringify(empty('Remote A')),b:bad?'not json':JSON.stringify(empty('Remote B')),ia:JSON.stringify({version:1,inbox:[]}),ib:JSON.stringify({version:1,inbox:[]})},writes:[],reads:[],writeStatus,listPage:0,created:[],createStatus:200,failCreatedRead:false,corruptCreatedRead:false,failInboxCreate:false,user:{permissionId:'user-a',emailAddress:'alice@example.test',displayName:'Alice'}};
   await page.route('https://accounts.google.com/gsi/client',r=>r.fulfill({contentType:'application/javascript',body:`window.google={accounts:{oauth2:{initTokenClient:opts=>({requestAccessToken:()=>opts.callback({access_token:'mock-token',expires_in:3600})})}}};`}));
   await page.route('https://www.googleapis.com/**',async route=>{
     const req=route.request(),url=new URL(req.url()),method=req.method();
     const reply=(body,status=200,extra={})=>route.fulfill({status,contentType:typeof body==='string'?'application/json':'application/json',headers:{etag:'"mock"',...extra},body:typeof body==='string'?body:JSON.stringify(body)});
     if(url.pathname.endsWith('/about'))return reply({user:api.user});
     const id=url.pathname.match(/\/files\/([^/]+)$/)?.[1];
-    if(id&&method==='GET'){api.reads.push(id);return reply(api.files[id]??'{}');}
+    if(id&&method==='GET'){api.reads.push(id);if(id==='created0'&&api.failCreatedRead)return reply({error:'read failed'},500);if(id==='created0'&&api.corruptCreatedRead)return reply(empty('unexpected content'));return reply(api.files[id]??'{}');}
     if(id&&method==='PATCH'){
       api.writes.push({id,body:req.postData()});if(api.writeStatus!==200)return reply({error:'mock failure'},api.writeStatus);
       api.files[id]=req.postData();return reply({id});
@@ -24,7 +24,8 @@ async function mockDrive(page,{writeStatus=200,bad=false,name='Board A.json'}={}
       return reply({files:[{id:'a',name,modifiedTime:'2026-07-13T04:40:00Z'},{id:'b',name:'Board B.json',modifiedTime:'2026-07-13T04:40:00Z'},...api.created]});
     }
     if(method==='POST'&&url.pathname.endsWith('/files')&&url.searchParams.get('uploadType')==='multipart'){
-      const request=new Request(url,{method:'POST',headers:{'Content-Type':req.headers()['content-type']},body:req.postDataBuffer()});const form=await request.formData();const metadata=JSON.parse(await form.get('metadata').text()),id='created'+api.created.length;api.created.push({...metadata,id,modifiedTime:'2026-10-17T09:00:00Z'});api.files[id]=await form.get('media').text();return reply({id});
+      if(api.createStatus!==200)return reply({error:'mock upload failure'},api.createStatus);
+      const request=new Request(url,{method:'POST',headers:{'Content-Type':req.headers()['content-type']},body:req.postDataBuffer()});const form=await request.formData();const metadata=JSON.parse(await form.get('metadata').text()),id='created'+api.created.length;if(api.failInboxCreate&&metadata.appProperties?.juiceType==='inbox')return reply({error:'inbox failed'},500);api.created.push({...metadata,id,modifiedTime:'2026-10-17T09:00:00Z'});api.files[id]=await form.get('media').text();return reply({id});
     }
     return reply({id:'new-file'});
   });
@@ -39,6 +40,28 @@ async function openBoard(page,name='Board A'){await page.locator('#btnDrive').cl
 async function editTitle(page,title){await page.locator('.card').first().dblclick();await page.locator('#pTitle').fill(title);await page.locator('#pClose').click();}
 async function stored(page){return page.evaluate(()=>JSON.parse(localStorage.getItem('sju-whiteboard-v2')));}
 async function clickTool(page,id){const button=page.locator('#'+id);if(!await button.isVisible())await page.locator('#btnToolsMore').click();await button.click();}
+
+async function prepareLocalUpload(page){
+  const api=await mockDrive(page);await boot(page);const d=empty('Local source');d.cards[0]={...d.cards[0],x:80,y:110,w:270,color:'navy',shape:'rect',blocks:[{id:'TEXT',type:'text',html:'<b>本機完整內容</b>'},{id:'FLOW',type:'diagram',html:'flowchart LR\n A --> B',diagramPositions:'{"A":{"x":40,"y":40}}',aiContext:'{"note":"keep"}'}]};d.icons=[{id:'ICON',name:'idea',x:20,y:30,size:48}];d.notes=[{id:'NOTE',text:'自由文字',x:350,y:20,w:200,size:20,color:'#2a3038'}];
+  d.cards.push({id:'card2',title:'Linked card',color:'wine',x:420,y:110,blocks:[{id:'LINKED_TEXT',type:'text',html:'保留連線'}],tags:[]});d.links=[{id:'EDGE',from:'card1',to:'card2',dir:'both',label:'資料流'}];d.images=[{id:'IMAGE',x:80,y:400,w:100,opacity:.8,layer:'below',src:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='}];d.groups=[{id:'GROUP',x:50,y:20,w:550,h:300,title:'保留群組',members:[{type:'card',id:'card1'},{type:'note',id:'NOTE'}]}];
+  await page.locator('#fileInput').setInputFiles({name:'Local import.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(d))});await expect(page.locator('.ctitle').first()).toHaveText('Local source');const original=await stored(page);await page.locator('#btnDrive').click();await expect(page.locator('#drvSaveCurrent')).toBeVisible();return {api,original};
+}
+async function confirmLocalUpload(page,name='Cloud copy'){page.once('dialog',async dialog=>{expect(dialog.message()).toContain('alice@example.test');await dialog.accept(name);});await page.locator('#drvSaveCurrent').click();}
+test('local board saves full contents as a new Drive file, then syncs edits while local source survives',async({page})=>{
+  const {api,original}=await prepareLocalUpload(page);await confirmLocalUpload(page);await expect(page.locator('#boardName')).toHaveText('· Cloud copy');await expect(page.locator('#connectionText')).toContainText('已同步 Drive');await expect(page.locator('#saveStatus')).toHaveText('剛剛儲存');expect(api.created.map(f=>f.name)).toEqual(['Cloud copy.json','Cloud copy-inbox.json']);const uploaded=JSON.parse(api.files.created0);for(const k of ['cards','links','groups','images','icons','notes','boardId','view'])expect(uploaded[k]).toEqual(original[k]);expect(api.files.a).toBe(JSON.stringify(empty('Remote A')));
+  await editTitle(page,'Cloud updated');await expect.poll(()=>JSON.parse(api.files.created0).cards[0].title).toBe('Cloud updated');await page.locator('#btnHome').click();await page.locator('#homeRouteLocal').click();await page.locator('#homeLocalList .home-board').filter({hasText:'Local import'}).click();await expect(page.locator('.ctitle').first()).toHaveText('Local source');await expect(page.locator('#connectionText')).toContainText('僅存本機');
+});
+test('local to Drive cancel and duplicate name never create or overwrite a file',async({page})=>{
+  const {api,original}=await prepareLocalUpload(page);page.once('dialog',d=>d.dismiss());await page.locator('#drvSaveCurrent').click();expect(api.created).toHaveLength(0);await confirmLocalUpload(page,'Board A');await expect(page.locator('#banner')).toContainText('同名白板');expect(api.created).toHaveLength(0);expect((await stored(page)).cards).toEqual(original.cards);await expect(page.locator('#boardName')).toHaveText('· Local import（本機）');
+});
+for(const status of [500,401])test('local to Drive upload failure '+status+' preserves the source and does not claim sync',async({page})=>{
+  const {api,original}=await prepareLocalUpload(page);api.createStatus=status;await confirmLocalUpload(page);await expect(page.locator('#banner')).toContainText(status===500?'500':'授權已過期');await expect(page.locator('#boardName')).toHaveText('· Local import（本機）');await expect(page.locator('#connectionText')).toContainText('僅存本機');expect((await stored(page)).cards).toEqual(original.cards);expect(api.created).toHaveLength(0);expect(api.writes).toHaveLength(0);
+});
+for(const mode of ['failCreatedRead','corruptCreatedRead'])test('local to Drive '+mode+' stops before binding or creating an inbox',async({page})=>{
+  const {api,original}=await prepareLocalUpload(page);api[mode]=true;await confirmLocalUpload(page);await expect(page.locator('#banner')).toContainText(mode==='corruptCreatedRead'?'回讀內容':'500');expect(api.created).toHaveLength(1);await expect(page.locator('#boardName')).toHaveText('· Local import（本機）');await expect(page.locator('#connectionText')).toContainText('僅存本機');expect((await stored(page)).cards).toEqual(original.cards);expect(api.writes).toHaveLength(0);
+});
+test('local to Drive inbox creation failure retains local source and existing cloud content',async({page})=>{const {api,original}=await prepareLocalUpload(page);api.failInboxCreate=true;await confirmLocalUpload(page);await expect(page.locator('#banner')).toContainText('500');await expect(page.locator('#boardName')).toHaveText('· Local import（本機）');expect(api.created).toHaveLength(1);expect((await stored(page)).cards).toEqual(original.cards);expect(api.writes).toHaveLength(0);});
+test('local to Drive home entry signs in first and requires explicit upload confirmation',async({page})=>{const api=await mockDrive(page);await boot(page);await page.locator('#btnAdd').click();await page.locator('#pTitle').fill('From home');await page.locator('#pClose').click();await page.locator('#btnHome').click();await page.locator('#homeSaveToDrive').click();await expect(page.locator('#homeAccount')).toContainText('alice@example.test');expect(api.created).toHaveLength(0);page.once('dialog',d=>d.accept('Home cloud'));await page.locator('#homeSaveToDrive').click();await expect(page.locator('#boardName')).toHaveText('· Home cloud');expect(JSON.parse(api.files.created0).cards[0].title).toBe('From home');await expect(page.locator('#home')).toBeHidden();});
 
 test('Classic dark card presets use light text, preserve selection and persist on reload',async({page})=>{
   await mockDrive(page);await boot(page);await page.locator('#btnAdd').click();await page.locator('#pTitle').fill('深色卡片測試');
