@@ -410,7 +410,7 @@ button.brand:hover{opacity:.85;}
 .home-resume>div:first-child{flex:1;min-width:0;}
 .home-resume h2{font-size:20px;overflow-wrap:anywhere;margin:5px 0;}
 .home-eyebrow{font-size:11px;color:var(--ink-soft);}
-.home-small-actions{width:100%;display:flex;gap:8px;}
+.home-small-actions{width:100%;display:flex;gap:8px;flex-wrap:wrap;}
 #home .home-small-actions button{font-size:12px;padding:5px 8px;}
 #homeStatus{min-height:20px;font-size:13px;color:#9B3C36;margin:12px 0;line-height:1.5;}
 .home-columns{display:grid;grid-template-columns:1.2fr 1fr;gap:18px;margin-bottom:18px;}
