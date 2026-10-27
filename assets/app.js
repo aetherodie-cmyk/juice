@@ -2,7 +2,9 @@
 (function(){
   const Core=window.JuiceCore;
   const COLORS={paper:{bg:'#FFFFFF',border:'#E6E8EC'},amber:{bg:'#FCEFD3',border:'#F2DDA8'},sage:{bg:'#DDEBDD',border:'#BFD8BF'},
-    blue:{bg:'#D8E6F5',border:'#B5CFEC'},rose:{bg:'#F7DEE2',border:'#EFC2CA'},lavender:{bg:'#E6E0F3',border:'#CFC3E8'},grey:{bg:'#EAECEF',border:'#D5D9DF'}};
+    blue:{bg:'#D8E6F5',border:'#B5CFEC'},rose:{bg:'#F7DEE2',border:'#EFC2CA'},lavender:{bg:'#E6E0F3',border:'#CFC3E8'},grey:{bg:'#EAECEF',border:'#D5D9DF'},
+    charcoal:{bg:'#263241',border:'#64748B',dark:true},navy:{bg:'#173B63',border:'#648AB1',dark:true},forest:{bg:'#204D43',border:'#70A395',dark:true},wine:{bg:'#7A263D',border:'#B77487',dark:true},plum:{bg:'#50345F',border:'#9D81AC',dark:true}};
+  const COLOR_NAMES={paper:'白色',amber:'米黃',sage:'淺綠',blue:'淺藍',rose:'粉紅',lavender:'淺紫',grey:'灰色',charcoal:'深灰・淺色文字',navy:'深藍・淺色文字',forest:'墨綠・淺色文字',wine:'酒紅・淺色文字',plum:'深紫・淺色文字'};
   const COLOR_KEYS=Object.keys(COLORS);
   const STORE_KEY='sju-whiteboard-v2';
   const BLOCK_TYPES=[
@@ -448,7 +450,7 @@
       if(block)host.before(classicReaderButton(c,block));
     });}
   const placeCard=c=>{const el=cardEls.get(c.id);el.style.left=c.x+'px';el.style.top=c.y+'px';el.style.width=c.w?c.w+'px':'';el.style.zIndex=String(100+(c.z||0));};
-  const applyCardColor=c=>{const el=cardEls.get(c.id),col=COLORS[c.color];el.style.background=col.bg;el.style.borderColor=col.border;};
+  const applyCardColor=c=>{const el=cardEls.get(c.id),col=COLORS[c.color]||COLORS.paper;el.style.background=col.bg;el.style.borderColor=col.border;el.classList.toggle('card-dark',!!col.dark);};
   function applyCardShape(c){const el=cardEls.get(c.id);if(!el)return;el.classList.remove('shape-rect','shape-pill');if(c.shape==='rect')el.classList.add('shape-rect');else if(c.shape==='pill')el.classList.add('shape-pill');}
 
   // ---------- links ----------
@@ -630,8 +632,8 @@
   $('btnDuplicate').addEventListener('click',duplicateSelection);
 
   function buildCardbar(){cardbar.innerHTML='';
-    COLOR_KEYS.forEach(k=>{const s=document.createElement('div');s.className='swatch';s.dataset.color=k;s.style.background=COLORS[k].bg;s.style.borderColor=COLORS[k].border;s.title=k;
-      s.addEventListener('pointerdown',e=>{e.stopPropagation();e.preventDefault();selection.forEach(id=>{const c=byId(state.cards,id);c.color=k;applyCardColor(c);if(id===openCardId){$('pHeadDot').style.background=COLORS[k].bg;$('pHeadDot').style.borderColor=COLORS[k].border;}});markSwatch();markPanelSwatch();scheduleSave();});cardbar.appendChild(s);});
+    COLOR_KEYS.forEach(k=>{const s=document.createElement('button');s.type='button';s.className='swatch';s.dataset.color=k;s.style.background=COLORS[k].bg;s.style.borderColor=COLORS[k].border;s.title=COLOR_NAMES[k];s.setAttribute('aria-label',COLOR_NAMES[k]);
+      const chooseColor=e=>{e.stopPropagation();e.preventDefault();selection.forEach(id=>{const c=byId(state.cards,id);c.color=k;applyCardColor(c);if(id===openCardId){$('pHeadDot').style.background=COLORS[k].bg;$('pHeadDot').style.borderColor=COLORS[k].border;}});markSwatch();markPanelSwatch();scheduleSave();};s.addEventListener('pointerdown',chooseColor);s.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' ')chooseColor(e);});cardbar.appendChild(s);});
     const vd=document.createElement('div');vd.className='vdiv';cardbar.appendChild(vd);
     [['置頂',true],['置底',false]].forEach(([label,front])=>{const button=document.createElement('button');button.className='act';button.textContent=label;button.onpointerdown=e=>{e.preventDefault();e.stopPropagation();orderCards(front);};cardbar.appendChild(button);});
     const open=document.createElement('button');open.className='act';open.textContent='展開';
@@ -843,7 +845,7 @@
       row.innerHTML='<span class="cdotc" style="background:'+COLORS[o.color].bg+'"></span><span class="cname'+(lbl.faint?' faint':'')+'">'+escapeHtml(lbl.text)+'</span>';
       row.addEventListener('click',()=>{openPanel(o);focusCardOnScreen(o);});box.appendChild(row);});}
   function focusCardOnScreen(c){const r=canvas.getBoundingClientRect();const cc=cardCenter(c);state.view.x=r.width/2-(isMobile()?0:392/2)-cc.x*state.view.zoom;state.view.y=r.height/2-cc.y*state.view.zoom;applyView();}
-  function renderPanelSwatches(c){const box=$('pSwatches');box.innerHTML='';    COLOR_KEYS.forEach(k=>{const s=document.createElement('button');s.type='button';s.className='pswatch';s.title={paper:'白色',amber:'米黃',sage:'淺綠',blue:'淺藍',rose:'粉紅',lavender:'淺紫',grey:'灰色'}[k];s.setAttribute('aria-label',s.title);s.dataset.color=k;s.style.background=COLORS[k].bg;s.style.borderColor=COLORS[k].border;
+  function renderPanelSwatches(c){const box=$('pSwatches');box.innerHTML='';    COLOR_KEYS.forEach(k=>{const s=document.createElement('button');s.type='button';s.className='pswatch';s.title=COLOR_NAMES[k];s.setAttribute('aria-label',s.title);s.dataset.color=k;s.style.background=COLORS[k].bg;s.style.borderColor=COLORS[k].border;
       s.addEventListener('click',()=>{c.color=k;applyCardColor(c);$('pHeadDot').style.background=COLORS[k].bg;$('pHeadDot').style.borderColor=COLORS[k].border;markPanelSwatch();markSwatch();touch(c);scheduleSave();});box.appendChild(s);});markPanelSwatch();}
   function markPanelSwatch(){const c=curCard();if(!c)return;$('pSwatches').querySelectorAll('.pswatch').forEach(s=>(s.classList.toggle('on',s.dataset.color===c.color),s.setAttribute('aria-pressed',String(s.dataset.color===c.color))));}
   const SHAPES=[{s:'note',label:'圓角'},{s:'rect',label:'直角'},{s:'pill',label:'膠囊'}];

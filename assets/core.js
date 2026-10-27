@@ -3,7 +3,7 @@
 window.JuiceCore = (() => {
   const MAX_BYTES = 20 * 1024 * 1024;
   const TYPES = new Set('text h1 h2 h3 bullet number todo quote callout code divider image diagram'.split(' '));
-  const COLORS = new Set('paper amber sage blue rose lavender grey'.split(' '));
+  const COLORS = new Set('paper amber sage blue rose lavender grey charcoal navy forest wine plum'.split(' '));
   const ICONS = new Set('person team customer database document warning check arrow phone mail ai calendar flag idea gear home office warehouse factory shop bank cloud server folder file spreadsheet chart barChart search target lock key shield bell clock hourglass stopwatch pin map globe car truck plane ship package cart money coin receipt card heart star sparkle fire bulb wrench hammer tools laptop desktop mobile printer camera video microphone headphones play pause stop refresh plus minus info question prohibited success pending fail up down left right link branch inbox outbox'.split(' '));
   const uid = () => crypto.randomUUID();
   const object = x => x && typeof x === 'object' && !Array.isArray(x);

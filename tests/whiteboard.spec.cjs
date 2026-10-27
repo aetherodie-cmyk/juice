@@ -40,6 +40,19 @@ async function editTitle(page,title){await page.locator('.card').first().dblclic
 async function stored(page){return page.evaluate(()=>JSON.parse(localStorage.getItem('sju-whiteboard-v2')));}
 async function clickTool(page,id){const button=page.locator('#'+id);if(!await button.isVisible())await page.locator('#btnToolsMore').click();await button.click();}
 
+test('Classic dark card presets use light text, preserve selection and persist on reload',async({page})=>{
+  await mockDrive(page);await boot(page);await page.locator('#btnAdd').click();await page.locator('#pTitle').fill('深色卡片測試');
+  const card=page.locator('.card').first();
+  for(const key of ['charcoal','navy','forest','wine','plum']){
+    await page.locator('#pSwatches [data-color='+key+']').click();await expect(card).toHaveClass(/card-dark/);await expect(card.locator('.ctitle')).toHaveCSS('color','rgb(248, 250, 252)');
+    const ratio=await card.evaluate(n=>{const rgb=s=>s.match(/[\d.]+/g).slice(0,3).map(Number),lum=c=>c.map(x=>{x/=255;return x<=.04045?x/12.92:((x+.055)/1.055)**2.4;}).reduce((s,x,i)=>s+x*[.2126,.7152,.0722][i],0),a=lum(rgb(getComputedStyle(n).backgroundColor)),b=lum(rgb(getComputedStyle(n.querySelector('.ctitle')).color));return(Math.max(a,b)+.05)/(Math.min(a,b)+.05);});expect(ratio).toBeGreaterThanOrEqual(4.5);
+  }
+  await page.locator('#pClose').click();await expect.poll(async()=>(await stored(page))?.cards?.[0]?.color).toBe('plum');await page.reload();await page.locator('#homeRouteLocal').click();await page.locator('#homeContinue').click();await expect(page.locator('.card')).toHaveClass(/card-dark/);await page.locator('.card').dblclick();await page.locator('#pSwatches [data-color=paper]').click();await expect(page.locator('.card')).not.toHaveClass(/card-dark/);await expect(page.locator('.ctitle')).toHaveCSS('color','rgb(42, 48, 56)');expect(page.appErrors).toEqual([]);
+});
+test('Classic dark colors survive JSON validation without changing rich text or old colors',async({page})=>{
+  await mockDrive(page);await boot(page);const result=await page.evaluate(()=>{const html='<a href="https://example.com">連結</a><b>粗體</b>',cards=['paper','amber','sage','blue','rose','lavender','grey','charcoal','navy','forest','wine','plum'].map((color,i)=>({id:'color'+i,title:'配色',color,blocks:[{id:'block'+i,type:'text',html}],tags:[]}));const normalized=JuiceCore.normalize({schemaVersion:3,boardId:'COLORS',cards,links:[],view:{x:0,y:0,zoom:1}});return JSON.parse(JSON.stringify(normalized));});expect(result.cards.map(c=>c.color)).toEqual(['paper','amber','sage','blue','rose','lavender','grey','charcoal','navy','forest','wine','plum']);expect(result.cards.every(c=>c.blocks[0].html.includes('粗體')&&c.blocks[0].html.includes('https://example.com'))).toBe(true);
+});
+
 test('more tools keeps concise labels inside bordered menu cells',async({page})=>{
   await mockDrive(page);await boot(page);await page.locator('#btnToolsMore').click();
   const panel=page.locator('#toolbarMorePanel'),image=page.locator('#btnImg');

@@ -89,6 +89,15 @@
   .group .gungroup:hover{background:var(--accent-soft);border-color:var(--accent);}
 
   /* card tile */
+  /* Card-local theme only: the white editor and other UI keep their own colors. */
+  .card.card-dark{--ink:#f8fafc;--ink-soft:#e2e8f0;--ink-faint:#cbd5e1;--line:#94a3b8;--accent:#bae6fd;--accent-hover:#e0f2fe;--accent-soft:rgba(255,255,255,.12);--callout-bg:rgba(255,255,255,.09);--callout-bd:#94a3b8;--code-bg:rgba(255,255,255,.12);color:var(--ink)}
+  .card.card-dark .ctag{background:rgba(255,255,255,.12)}
+  .card.card-dark .cprev .pvmore{background:rgba(255,255,255,.08);color:#f0f9ff}
+  .card.card-dark .expand,.card.card-dark .flow-reader-open{background:#f8fafc;color:#1e293b}
+  .card.card-dark .pvdiagram{background:#fff;color:#2a3038}
+  .ptools #pSwatches{flex-wrap:wrap;justify-content:flex-start;gap:7px}
+  #cardbar button.swatch{padding:0;flex:none}
+  @media(max-width:640px){.ptools,.ptools .ptoolrow{min-width:0}.ptools #pSwatches{min-width:0;max-width:100%;flex-wrap:nowrap;overflow-x:auto;justify-content:flex-start;gap:4px;scrollbar-width:none}.ptools #pSwatches::-webkit-scrollbar{display:none}}
   .card{position:absolute;width:240px;min-height:48px;z-index:3;background:#fff;border:1px solid var(--line);border-radius:14px;
     box-shadow:var(--shadow-card);padding:12px 14px;cursor:grab;transition:box-shadow .12s,border-color .12s;will-change:transform;}
   .card:hover{box-shadow:var(--shadow-pop);}
