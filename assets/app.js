@@ -459,7 +459,8 @@
     const vis=document.createElementNS(SVGNS,'path');vis.setAttribute('class','lvis');
     g.appendChild(hit);g.appendChild(vis);linkSvg.appendChild(g);linkEls.set(l.id,g);
     const tips=document.createElementNS(SVGNS,'g');tips.dataset.linkId=l.id;g._tips=tips;
-    for(const part of ['start','end']){const path=document.createElementNS(SVGNS,'path');path.setAttribute('class','ltip '+part);tips.appendChild(path);}linkTips.appendChild(tips);
+    for(const part of ['start','end']){const path=document.createElementNS(SVGNS,'path');path.setAttribute('class','ltip '+part);tips.appendChild(path);}
+    for(const part of ['start','end','control1','control2']){const handle=document.createElementNS(SVGNS,'circle');handle.setAttribute('class','link-control '+(part==='start'||part==='end'?'anchor':'route'));handle.setAttribute('r',part==='start'||part==='end'?8:7);handle.setAttribute('data-part',part);handle.setAttribute('aria-label',part==='start'?'拖曳起點錨點':part==='end'?'拖曳終點錨點':'拖曳路徑控制點');handle.addEventListener('pointerdown',event=>onLinkControlDown(event,l,part));tips.appendChild(handle);}linkTips.appendChild(tips);
     hit.addEventListener('pointerdown',e=>{e.stopPropagation();selectLink(l.id);});
     applyLinkDir(l);return g;}
   function applyLinkDir(l){const g=linkEls.get(l.id);if(!g)return;const vis=g.querySelector('.lvis');
@@ -486,26 +487,71 @@
       return [{x:a.x,y:a.y+sign*(ah/2+gap)},{x:b.x,y:b.y-sign*(bh/2+gap)},'y'];}
     return [edgePoint(a.x,a.y,aw/2,ah/2,b.x,b.y),edgePoint(b.x,b.y,bw/2,bh/2,a.x,a.y)];
   }
+  const sideVector=side=>({top:{x:0,y:-1},right:{x:1,y:0},bottom:{x:0,y:1},left:{x:-1,y:0}}[side]);
+  function outsideControl(point,endpoint,side){const normal=sideVector(side),distance=(point.x-endpoint.x)*normal.x+(point.y-endpoint.y)*normal.y;
+    if(distance>=24)return point;return{x:point.x+normal.x*(24-distance),y:point.y+normal.y*(24-distance)};}
+  function anchorPoint(card,element,anchor){const width=element.offsetWidth,height=element.offsetHeight;
+    return {x:card.x+(anchor.side==='left'?0:anchor.side==='right'?width:width*anchor.t),y:card.y+(anchor.side==='top'?0:anchor.side==='bottom'?height:height*anchor.t)};}
+  function nearestAnchor(card,element,point){const width=element.offsetWidth,height=element.offsetHeight;
+    const options=[['left',Math.abs(point.x-card.x),Math.max(.05,Math.min(.95,(point.y-card.y)/height))],['right',Math.abs(point.x-card.x-width),Math.max(.05,Math.min(.95,(point.y-card.y)/height))],['top',Math.abs(point.y-card.y),Math.max(.05,Math.min(.95,(point.x-card.x)/width))],['bottom',Math.abs(point.y-card.y-height),Math.max(.05,Math.min(.95,(point.x-card.x)/width))]];
+    options.sort((first,second)=>first[1]-second[1]);return {side:options[0][0],t:Math.round(options[0][2]*1000)/1000};}
+  function facingSide(point,center,width,height){const x=(point.x-center.x)/(width/2),y=(point.y-center.y)/(height/2);return Math.abs(x)>Math.abs(y)?x>=0?'right':'left':y>=0?'bottom':'top';}
+  function linkGeometry(link,source,target,sourceElement,targetElement){
+    const sourceCenter=cardCenter(source),targetCenter=cardCenter(target);
+    const [automaticStart,automaticEnd,axis]=linkEndpoints(sourceCenter,targetCenter,sourceElement.offsetWidth,sourceElement.offsetHeight,targetElement.offsetWidth,targetElement.offsetHeight);
+    const start=link.startAnchor?anchorPoint(source,sourceElement,link.startAnchor):automaticStart;
+    const end=link.endAnchor?anchorPoint(target,targetElement,link.endAnchor):automaticEnd;
+    const startSide=link.startAnchor?.side||facingSide(automaticStart,sourceCenter,sourceElement.offsetWidth,sourceElement.offsetHeight);
+    const endSide=link.endAnchor?.side||facingSide(automaticEnd,targetCenter,targetElement.offsetWidth,targetElement.offsetHeight);
+    if(link.style==='orthogonal'){
+      const sourceVector=sideVector(startSide),targetVector=sideVector(endSide),clearance=28;
+      const first={x:start.x+sourceVector.x*clearance,y:start.y+sourceVector.y*clearance};
+      const last={x:end.x+targetVector.x*clearance,y:end.y+targetVector.y*clearance};
+      const center={x:(first.x+last.x)/2+(link.manual?link.bend?.x||0:0),y:(first.y+last.y)/2+(link.manual?link.bend?.y||0:0)};
+      const points=[start,first,{x:center.x,y:first.y},center,{x:last.x,y:center.y},last,end];
+      const distinct=points.filter((point,index)=>index===0||point.x!==points[index-1].x||point.y!==points[index-1].y);
+      return {d:distinct.map((point,index)=>(index?'L ':'M ')+point.x+' '+point.y).join(' '),start,end,startSide,endSide,controls:[center],base:{x:(first.x+last.x)/2,y:(first.y+last.y)/2}};
+    }
+    const dx=end.x-start.x,dy=end.y-start.y,span=Math.hypot(dx,dy),distance=Math.max(36,Math.min(140,span*.38));
+    let first,second;
+    if(!link.startAnchor&&!link.endAnchor&&!link.manual){
+      const direction=axis==='y'||(!axis&&Math.abs(dy)>=Math.abs(dx))?'y':'x';
+      const distanceAlong=Math.min(Math.abs(direction==='y'?dy:dx)/2,Math.max(40,Math.abs(direction==='y'?dy:dx)*.4));
+      const signed=(direction==='y'?dy:dx)>=0?distanceAlong:-distanceAlong;
+      first=direction==='y'?{x:start.x,y:start.y+signed}:{x:start.x+signed,y:start.y};
+      second=direction==='y'?{x:end.x,y:end.y-signed}:{x:end.x-signed,y:end.y};
+    }else{
+      const sourceVector=sideVector(startSide),targetVector=sideVector(endSide);
+      first={x:start.x+sourceVector.x*distance,y:start.y+sourceVector.y*distance};
+      second={x:end.x+targetVector.x*distance,y:end.y+targetVector.y*distance};
+    }
+    if(link.manual&&link.curveControls){first={x:start.x+link.curveControls[0].x,y:start.y+link.curveControls[0].y};second={x:end.x+link.curveControls[1].x,y:end.y+link.curveControls[1].y};}
+    if(link.startAnchor||link.manual)first=outsideControl(first,start,startSide);
+    if(link.endAnchor||link.manual)second=outsideControl(second,end,endSide);
+    return {d:`M ${start.x} ${start.y} C ${first.x} ${first.y}, ${second.x} ${second.y}, ${end.x} ${end.y}`,start,end,startSide,endSide,controls:[first,second]};
+  }
   function ensureLabel(l){if(!l.label){const e=linkLabelEls.get(l.id);if(e){e.remove();linkLabelEls.delete(l.id);}return null;}
     let e=linkLabelEls.get(l.id);if(!e){e=document.createElement('div');e.className='linklabel';world.appendChild(e);linkLabelEls.set(l.id,e);}e.textContent=l.label;return e;}
   function updateOneLink(l){const a=byId(state.cards,l.from),b=byId(state.cards,l.to),g=linkEls.get(l.id);
     if(!a||!b||!g){if(g){g.querySelector('.lvis').setAttribute('d','');g.querySelector('.lhit').setAttribute('d','');}return;}
-    const ea=cardEls.get(a.id),eb=cardEls.get(b.id),ca=cardCenter(a),cb=cardCenter(b);
-    const [pa,pb,axis]=linkEndpoints(ca,cb,ea.offsetWidth,ea.offsetHeight,eb.offsetWidth,eb.offsetHeight);
-    const d=linkPath(pa.x,pa.y,pb.x,pb.y,axis);g.querySelector('.lvis').setAttribute('d',d);g.querySelector('.lhit').setAttribute('d',d);
+    const ea=cardEls.get(a.id),eb=cardEls.get(b.id),geometry=linkGeometry(l,a,b,ea,eb),{start:pa,end:pb,d}=geometry;
+    g.querySelector('.lvis').setAttribute('d',d);g.querySelector('.lhit').setAttribute('d',d);
     const path=g.querySelector('.lvis'),length=path.getTotalLength(),span=Math.min(18,length/2);
     for(const part of ['start','end']){const from=part==='start'?0:length-span,to=part==='start'?span:length;let segment='';
       for(let i=0;i<=8;i++){const p=path.getPointAtLength(from+(to-from)*i/8);segment+=(i?' L ':'M ')+p.x+' '+p.y;}g._tips.querySelector('.'+part).setAttribute('d',segment);}
-    const lab=ensureLabel(l);if(lab){lab.style.left=((pa.x+pb.x)/2)+'px';lab.style.top=((pa.y+pb.y)/2)+'px';}}
+    for(const [part,point] of [['start',pa],['end',pb],['control1',geometry.controls[0]],['control2',geometry.controls[1]]]){
+      const handle=g._tips.querySelector('[data-part="'+part+'"]');handle.hidden=!point;handle.style.display=point?'':'none';if(point){const normal=part==='start'||part==='end'?sideVector(part==='start'?geometry.startSide:geometry.endSide):{x:0,y:0};handle.setAttribute('cx',point.x+normal.x*14);handle.setAttribute('cy',point.y+normal.y*14);}}
+    const lab=ensureLabel(l);if(lab){const mid=path.getPointAtLength(length/2);lab.style.left=mid.x+'px';lab.style.top=mid.y+'px';}}
   function refreshLinks(){state.links.forEach(updateOneLink);}
   function refreshLinksFor(id){state.links.forEach(l=>{if(l.from===id||l.to===id)updateOneLink(l);});}
-  function selectLink(id){clearSelection();selectedLink=id;linkEls.get(id)?.classList.add('sel');showLinkbar(id);}
-  function deselectLink(){if(selectedLink){linkEls.get(selectedLink)?.classList.remove('sel');selectedLink=null;}hideLinkbar();}
+  function selectLink(id){clearSelection();selectedLink=id;linkEls.get(id)?.classList.add('sel');linkEls.get(id)?._tips?.classList.add('selected');showLinkbar(id);}
+  function deselectLink(){if(selectedLink){linkEls.get(selectedLink)?.classList.remove('sel');linkEls.get(selectedLink)?._tips?.classList.remove('selected');selectedLink=null;}hideLinkbar();}
   function showLinkbar(id){const l=byId(state.links,id);if(!l)return;const a=byId(state.cards,l.from),b=byId(state.cards,l.to);if(!a||!b)return;
     const ca=cardCenter(a),cb=cardCenter(b),mx=(ca.x+cb.x)/2,my=(ca.y+cb.y)/2,r=canvas.getBoundingClientRect();
     const sx=r.left+state.view.x+mx*state.view.zoom,sy=r.top+state.view.y+my*state.view.zoom,bar=$('linkbar');bar.style.display='flex';
     bar.querySelectorAll('.dirb').forEach(btn=>btn.classList.toggle('on',btn.dataset.dir===l.dir));
-    bar.querySelector('.lbl').value=l.label||'';bar.style.left=(sx-bar.offsetWidth/2)+'px';bar.style.top=Math.max(58,sy-bar.offsetHeight-14)+'px';}
+    bar.querySelectorAll('.styleb').forEach(btn=>btn.classList.toggle('on',btn.dataset.style===(l.style||'curve')));
+    bar.querySelector('.lbl').value=l.label||'';bar.style.left=Math.max(8,Math.min(innerWidth-bar.offsetWidth-8,sx-bar.offsetWidth/2))+'px';bar.style.top=Math.max(58,sy-bar.offsetHeight-14)+'px';}
   function hideLinkbar(){$('linkbar').style.display='none';}
   const deleteLink=(id)=>destructive(()=>deleteLinkNow(id));
   function deleteLinkNow(id){state.links=state.links.filter(l=>l.id!==id);removeLinkEl(id);
@@ -514,7 +560,30 @@
   $('linkbar').querySelectorAll('.dirb').forEach(btn=>btn.addEventListener('click',()=>{const l=byId(state.links,selectedLink);if(!l)return;l.dir=btn.dataset.dir;applyLinkDir(l);
     $('linkbar').querySelectorAll('.dirb').forEach(b=>b.classList.toggle('on',b===btn));scheduleSave();}));
   $('linkbar').querySelector('.lbl').addEventListener('input',function(){const l=byId(state.links,selectedLink);if(!l)return;l.label=this.value;updateOneLink(l);scheduleSave('link:'+l.id);});
+  $('linkbar').querySelectorAll('.styleb').forEach(button=>button.addEventListener('click',()=>{const link=byId(state.links,selectedLink);if(!link)return;
+    link.style=button.dataset.style;link.manual=false;delete link.curveControls;delete link.bend;updateOneLink(link);showLinkbar(link.id);scheduleSave();}));
+  $('linkReset').addEventListener('click',()=>{const link=byId(state.links,selectedLink);if(!link)return;
+    delete link.startAnchor;delete link.endAnchor;delete link.curveControls;delete link.bend;link.manual=false;updateOneLink(link);showLinkbar(link.id);scheduleSave();});
   $('linkDel').addEventListener('click',()=>{if(selectedLink)deleteLink(selectedLink);});
+  let linkControlDrag=null;
+  function onLinkControlDown(event,link,part){event.stopPropagation();event.preventDefault();selectLink(link.id);
+    linkControlDrag={link,part,before:structuredClone(link)};window.addEventListener('pointermove',onLinkControlMove);window.addEventListener('pointerup',onLinkControlUp);window.addEventListener('pointercancel',onLinkControlUp);}
+  function onLinkControlMove(event){if(!linkControlDrag)return;const {link,part}=linkControlDrag,source=byId(state.cards,link.from),target=byId(state.cards,link.to);
+    if(!source||!target)return;const point=screenToWorld(event.clientX,event.clientY);
+    if(part==='start'||part==='end'){
+      const card=part==='start'?source:target,element=cardEls.get(card.id),key=part==='start'?'startAnchor':'endAnchor';
+      link[key]=nearestAnchor(card,element,point);
+    }else{
+      const geometry=linkGeometry(link,source,target,cardEls.get(source.id),cardEls.get(target.id));link.manual=true;
+      if(link.style==='orthogonal')link.bend={x:point.x-geometry.base.x,y:point.y-geometry.base.y};
+      else{const controls=link.curveControls||geometry.controls.map((control,index)=>({x:control.x-(index?geometry.end.x:geometry.start.x),y:control.y-(index?geometry.end.y:geometry.start.y)}));
+        const index=part==='control1'?0:1,endpoint=index?geometry.end:geometry.start,card=index?target:source,element=cardEls.get(card.id);
+        const side=(index?link.endAnchor:link.startAnchor)?.side||facingSide(endpoint,cardCenter(card),element.offsetWidth,element.offsetHeight);
+        const adjusted=outsideControl(point,endpoint,side);controls[index]={x:adjusted.x-endpoint.x,y:adjusted.y-endpoint.y};link.curveControls=controls;}
+    }
+    updateOneLink(link);}
+  function onLinkControlUp(event){window.removeEventListener('pointermove',onLinkControlMove);window.removeEventListener('pointerup',onLinkControlUp);window.removeEventListener('pointercancel',onLinkControlUp);
+    if(linkControlDrag){if(event.type==='pointercancel'){const {link,before}=linkControlDrag;for(const key of Object.keys(link))if(!(key in before))delete link[key];Object.assign(link,before);updateOneLink(link);}else scheduleSave('link-route:'+linkControlDrag.link.id);}linkControlDrag=null;}
 
   // ---------- groups ----------
   function makeGroupEl(g){const el=document.createElement('div');el.className='group';el.dataset.id=g.id;

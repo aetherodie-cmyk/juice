@@ -58,7 +58,19 @@ window.JuiceCore = (() => {
     assert(object(d) && Array.isArray(d.cards), '缺少白板 cards 清單');
     assert(d.schemaVersion == null || [1,2,3].includes(d.schemaVersion), '不支援此資料版本');
     const cards=unique(array(d.cards).map(c=>card(c,legacy))), ids=new Set(cards.map(c=>c.id));
-    const links=unique(array(d.links,30000).map(l=>{assert(object(l));assert(ids.has(l.from)&&ids.has(l.to), '連線指向不存在的卡片');return {id:id(l.id),from:l.from,to:l.to,dir:['none','to','both'].includes(l.dir)?l.dir:'none',label:text(l.label,10000)};}));
+    const links=unique(array(d.links,30000).map(l=>{
+      assert(object(l));assert(ids.has(l.from)&&ids.has(l.to), '連線指向不存在的卡片');
+      const result={id:id(l.id),from:l.from,to:l.to,dir:['none','to','both'].includes(l.dir)?l.dir:'none',label:text(l.label,10000)};
+      if(l.style!=null){assert(['curve','orthogonal'].includes(l.style),'連線線型不正確');result.style=l.style;}
+      for(const key of ['startAnchor','endAnchor'])if(l[key]!=null){
+        assert(object(l[key])&&['top','right','bottom','left'].includes(l[key].side),'連線錨點不正確');
+        result[key]={side:l[key].side,t:num(l[key].t,0.5,0.05,0.95)};
+      }
+      if(l.manual!=null){assert(typeof l.manual==='boolean','連線路徑狀態不正確');result.manual=l.manual;}
+      if(l.curveControls!=null){assert(Array.isArray(l.curveControls)&&l.curveControls.length===2,'曲線控制點不正確');result.curveControls=l.curveControls.map(point=>{assert(object(point));return{x:num(point.x),y:num(point.y)};});}
+      if(l.bend!=null){assert(object(l.bend),'折線控制點不正確');result.bend={x:num(l.bend.x),y:num(l.bend.y)};}
+      return result;
+    }));
     const images=unique(array(d.images,1000).map(i=>{assert(object(i));return{id:id(i.id),x:num(i.x),y:num(i.y),w:num(i.w,600,1),src:safeImage(i.src),opacity:num(i.opacity,0.55,0,1),layer:i.layer==='above'?'above':'below'};}));
     const icons=unique(array(d.icons,1000).map(i=>{assert(object(i));const src=i.name==='custom'?safeImage(i.src):'';
       const result={id:id(i.id),x:num(i.x),y:num(i.y),name:src?'custom':ICONS.has(i.name)?i.name:'idea',size:num(i.size,44,18,160),layer:i.layer==='below'?'below':'above'};
