@@ -54,14 +54,21 @@
   #linkLayer{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none;z-index:2;}
   #linkTips{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none;z-index:2147483646;}
   #linkTips .ltip{fill:none;stroke:var(--link);stroke-width:2;pointer-events:none;}
+  #linkTips .link-control{display:none;fill:#fff;stroke:var(--accent);stroke-width:2;pointer-events:all;cursor:grab;}
+  #linkTips .link-control.anchor{fill:var(--accent);stroke:#fff;stroke-width:2.5;}
+  #linkTips g.selected .link-control{display:block;}
+  #linkTips .link-control:active{cursor:grabbing;}
   #linkLayer path.lvis{fill:none;stroke:var(--link);stroke-width:2;}
   #linkLayer path.lhit{fill:none;stroke:transparent;stroke-width:18;pointer-events:stroke;cursor:pointer;}
   #linkLayer g.sel path.lvis{stroke:var(--accent);stroke-width:2.6;}
   #linkLayer path.temp{fill:none;stroke:var(--accent);stroke-width:2;stroke-dasharray:6 5;}
   .linklabel{position:absolute;transform:translate(-50%,-50%);background:#fff;border:1px solid var(--line);border-radius:7px;padding:1px 7px;font-size:11.5px;color:var(--ink);white-space:nowrap;z-index:2;pointer-events:none;box-shadow:0 1px 3px rgba(28,33,48,.08);}
-  #linkbar{position:absolute;z-index:60;display:none;align-items:center;gap:4px;background:#fff;border:1px solid var(--line);border-radius:13px;box-shadow:var(--shadow-pop);padding:6px 8px;}
+  #linkbar{position:absolute;z-index:60;display:none;align-items:center;flex-wrap:wrap;max-width:calc(100vw - 16px);gap:4px;background:#fff;border:1px solid var(--line);border-radius:13px;box-shadow:var(--shadow-pop);padding:6px 8px;}
   #linkbar button.dirb{border:1px solid var(--line);background:#fff;width:34px;height:28px;border-radius:8px;cursor:pointer;font-size:14px;color:var(--ink);}
   #linkbar button.dirb.on{background:var(--accent);color:#fff;border-color:var(--accent);}
+  #linkbar .link-help{font-size:11px;color:var(--ink-soft);white-space:nowrap;padding:0 5px;}
+  #linkbar button.styleb,#linkReset{border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 8px;font:12px var(--font);cursor:pointer;white-space:nowrap;}
+  #linkbar button.styleb.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);}
   #linkbar input.lbl{border:1px solid var(--line);border-radius:8px;padding:5px 8px;font-size:12px;width:108px;outline:none;font-family:var(--font);}
   #linkbar input.lbl:focus{border-color:var(--accent);}
   #linkbar .vdiv3{width:1px;height:20px;background:var(--line);margin:0 3px;}

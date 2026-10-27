@@ -121,11 +121,16 @@
   <div id="cardbar"></div>
 
   <div id="linkbar">
+    <span class="link-help" title="點選連線後拖曳兩端圓點可改出入位置；拖曳中間控制點可調整路徑">拖曳端點／控制點</span>
     <button class="dirb" data-dir="none" title="無箭頭">—</button>
     <button class="dirb" data-dir="to" title="單向">→</button>
     <button class="dirb" data-dir="both" title="雙向">↔</button>
     <span class="vdiv3"></span>
     <input class="lbl" placeholder="標籤（如：是／否）">
+    <span class="vdiv3"></span>
+    <button class="styleb" data-style="curve" title="平滑曲線">曲線</button>
+    <button class="styleb" data-style="orthogonal" title="直角折線">直角</button>
+    <button id="linkReset" title="恢復自動錨點與路徑">重設自動</button>
     <span class="vdiv3"></span>
     <button class="ldel" id="linkDel">刪除</button>
   </div>
