@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 3,
+  "boardId": "local-viewer-demo",
+  "savedAt": 1793100000000,
+  "view": {"x": 40, "y": 40, "zoom": 1},
+  "cards": [
+    {"id": "start", "x": 80, "y": 110, "w": 280, "color": "navy", "title": "示例：開始", "blocks": [{"id": "a", "type": "text", "html": "<b>此為本機唯讀測試資料</b>，不含正式業務內容。"}], "tags": ["唯讀"]},
+    {"id": "flow", "x": 510, "y": 110, "w": 380, "color": "sage", "title": "示例：流程", "blocks": [{"id": "b", "type": "diagram", "html": "flowchart LR\n  A[載入 JSON] --> B[檢視白板]\n  B --> C[不寫回資料]"}], "tags": ["流程"]},
+    {"id": "todo", "x": 80, "y": 400, "w": 280, "color": "amber", "title": "閱讀檢查", "blocks": [{"id": "c", "type": "todo", "html": "卡片位置保持不變", "checked": true}, {"id": "d", "type": "todo", "html": "平移與縮放只改變觀看狀態"}], "tags": []}
+  ],
+  "links": [
+    {"id": "link-a", "from": "start", "to": "flow", "dir": "to", "style": "orthogonal", "label": "檢視"},
+    {"id": "link-b", "from": "start", "to": "todo", "dir": "to", "label": "確認"}
+  ],
+  "groups": [{"id": "demo-group", "x": 45, "y": 70, "w": 900, "h": 550, "title": "示例群組"}],
+  "images": [],
+  "icons": [{"id": "demo-icon", "x": 900, "y": 90, "name": "star", "size": 44, "layer": "above"}],
+  "notes": [{"id": "demo-note", "x": 510, "y": 460, "w": 350, "text": "這份示例檔可用來測試檢視，不會寫入 Classic。", "size": 20, "color": "#2A3038", "layer": "above"}]
+}

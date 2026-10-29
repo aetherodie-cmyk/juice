@@ -1568,6 +1568,7 @@
   async function renderDriveModal(){
     $('drvLogin').style.display=gdReady()?'none':'';$('drvLoggedIn').style.display=gdReady()?'':'none';if(!gdReady())return;
     const canCopy=!gdCurrentFileId&&workspaceMeta.kind==='local'&&!syncHandle&&!loadFailed;$('drvSaveCurrent').hidden=!canCopy;$('drvSaveCurrentHint').hidden=!canCopy;
+    $('drvReadOnlyLink').hidden=!gdCurrentFileId||workspaceMeta.kind!=='drive'||workspaceMeta.ownerId!==gdUser.permissionId;
     $('drvUserRow').textContent='目前帳號：'+(gdUser.emailAddress||gdUser.displayName);const list=$('drvBoardList');list.textContent='載入中…';
     try{const boards=await gdListBoards();list.replaceChildren();if(!boards.length)list.textContent='尚無白板，請新增白板。';
       for(const b of boards){const row=document.createElement('div');row.className='drv-board'+(gdCurrentFileId===b.id?' active':'');
@@ -1581,6 +1582,12 @@
     }catch(e){list.textContent='載入失敗，請關閉後重試。';reportError(e);}
   }
   function openDriveModal(){$('driveModal').classList.add('open');renderDriveModal();}
+  $('drvReadOnlyLink').addEventListener('click',async()=>{
+    if(!gdReady()||!gdCurrentFileId||workspaceMeta.kind!=='drive'||workspaceMeta.ownerId!==gdUser.permissionId)return;
+    const url=new URL('view.html',location.href);url.searchParams.set('file',gdCurrentFileId);
+    try{await navigator.clipboard.writeText(url.href);showBanner((gdDirty||gdError||gdConflict?'連結已複製；未同步的修改不會出現在唯讀頁。':'唯讀連結已複製；請先在 Drive 將指定同事設為檢視者。'));}
+    catch(error){prompt('請複製唯讀連結；未同步的修改不會出現在唯讀頁：',url.href);}
+  });
   function closeDriveModal(){$('driveModal').classList.remove('open');if(home.hidden&&!canEditWorkspace()){homeRoute='drive';openHome();}}
   $('drvClose').addEventListener('click',closeDriveModal);
   $('driveModal').addEventListener('pointerdown',e=>{if(e.target.id==='driveModal')closeDriveModal();});

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Juice Classic｜唯讀檢視</title>
+<link rel="stylesheet" href="assets/styles.css">
+<link rel="stylesheet" href="assets/flow-reader.css">
+<link rel="stylesheet" href="assets/local-viewer.css">
+</head>
+<body>
+<main id="viewer">
+  <header class="viewer-toolbar">
+    <strong>Juice Classic <span>唯讀檢視 · 測試版</span></strong>
+    <label class="viewer-load" id="viewerLocalLoad">載入本機 JSON<input id="viewerFile" type="file" accept=".json,application/json"></label>
+    <button id="viewerLogin" type="button" hidden>登入 Google</button>
+    <button id="viewerPicker" type="button" hidden>授權指定檔案</button>
+    <button id="viewerRefresh" type="button" hidden disabled>立即檢查更新</button>
+    <button id="viewerLogout" type="button" hidden>切換帳號</button>
+    <span id="viewerName">尚未載入白板</span>
+    <span id="viewerAccount" hidden></span>
+    <span class="viewer-spacer"></span>
+    <button id="viewerFit" type="button" disabled>符合視窗</button>
+    <button id="viewerOut" type="button" disabled aria-label="縮小">−</button>
+    <output id="viewerZoom">100%</output>
+    <button id="viewerIn" type="button" disabled aria-label="放大">＋</button>
+  </header>
+  <p id="viewerStatus" role="status" aria-live="polite">請選擇從 Classic 匯出的完整白板 JSON。資料僅在此分頁記憶體中顯示。</p>
+  <div id="canvas" aria-label="唯讀白板畫布">
+    <div id="world"><svg id="linkLayer" aria-hidden="true"><defs>
+      <marker id="arrowhead" markerWidth="16" markerHeight="14" refX="11" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L11,5 L0,10 Z" fill="#64748b" stroke="#fff" stroke-width="1" paint-order="stroke fill"/></marker>
+      <marker id="arrowstart" markerWidth="16" markerHeight="14" refX="0" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M11,0 L0,5 L11,10 Z" fill="#64748b" stroke="#fff" stroke-width="1" paint-order="stroke fill"/></marker>
+    </defs></svg></div>
+  </div>
+  <dialog id="viewerImage" aria-label="圖片檢視"><button type="button" aria-label="關閉圖片">關閉</button><img alt="放大圖片"></dialog>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/pele@1.9.0/dist/pele.global.js"></script>
+<script src="https://accounts.google.com/gsi/client" async></script>
+<script src="https://apis.google.com/js/api.js" async></script>
+<script src="assets/core.js"></script>
+<script src="assets/pele-flow.js"></script>
+<script src="assets/flow-reader.js"></script>
+<script src="assets/local-viewer.js"></script>
+<script src="assets/drive-viewer-config.js"></script>
+<script src="assets/drive-viewer.js"></script>
+</body>
+</html>

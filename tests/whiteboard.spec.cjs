@@ -37,6 +37,13 @@ async function mockPele(page){
 test.afterEach(async({page})=>{expect(page.appErrors||[]).toEqual([]);});
 async function boot(page,{showHome=false}={}){const errors=[];page.appErrors=errors;page.on('pageerror',e=>{errors.push(e.message);console.log('PAGE ERROR:',e.stack);});await page.goto('/');await expect(page.locator('#home')).toBeVisible();if(!showHome){await page.locator('#homeRouteLocal').click();if(await page.locator('#homeContinue').isEnabled())await page.locator('#homeContinue').click();await expect(page.locator('#btnAdd')).toBeVisible();}return errors;}
 async function openBoard(page,name='Board A'){await page.locator('#btnDrive').click();await expect(page.locator('.drv-board-name').first()).toBeVisible();await page.locator('.drv-board-name').filter({hasText:name}).click();await expect(page.locator('#boardName')).toHaveText('· '+name);}
+test('Drive-bound Classic board exposes a read-only link without uploading local drafts',async({page})=>{
+  await mockDrive(page);await page.addInitScript(()=>{Object.defineProperty(navigator,'clipboard',{value:{writeText:async text=>{window.copiedReadOnlyLink=text;}}});});
+  await boot(page);await page.locator('#btnDrive').click();await expect(page.locator('#drvReadOnlyLink')).toBeHidden();
+  await page.locator('.drv-board-name').filter({hasText:'Board A'}).click();await page.locator('#btnDrive').click();
+  await expect(page.locator('#drvReadOnlyLink')).toBeVisible();await page.locator('#drvReadOnlyLink').click();
+  expect(await page.evaluate(()=>window.copiedReadOnlyLink)).toBe(new URL('/view.html?file=a',page.url()).href);
+});
 async function editTitle(page,title){await page.locator('.card').first().dblclick();await page.locator('#pTitle').fill(title);await page.locator('#pClose').click();}
 async function stored(page){return page.evaluate(()=>JSON.parse(localStorage.getItem('sju-whiteboard-v2')));}
 async function clickTool(page,id){const button=page.locator('#'+id);if(!await button.isVisible())await page.locator('#btnToolsMore').click();await button.click();}
