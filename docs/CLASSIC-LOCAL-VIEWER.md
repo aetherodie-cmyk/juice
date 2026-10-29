@@ -1,6 +1,6 @@
 # Classic 唯讀檢視（測試版）
 
-正式站測試入口為 `https://aetherodie-cmyk.github.io/juice/view.html`；加入 `?file=DRIVE_FILE_ID` 可測試讀取已綁定的 Drive 白板。這仍是測試版，跨帳號分享尚未驗收，不應當作已可用的正式分享功能。`127.0.0.1` 連結只在這台 Mac 可用，不能傳給同事。
+正式站測試入口為 `https://aetherodie-cmyk.github.io/juice/view.html`；加入 `?file=DRIVE_FILE_ID` 可讀取已綁定的 Drive 白板。這仍是測試版，需逐檔確認 Drive 檢視權限與指定檔案授權。`127.0.0.1` 連結只在這台 Mac 可用，不能傳給同事。
 
 1. 在專案根目錄執行 `python3 -m http.server 4214 --bind 127.0.0.1`。
 2. 開啟 `http://127.0.0.1:4214/view.html`，按「載入本機 JSON」，先可選 `tests/fixtures/local-viewer-demo.json` 練習，再選擇由 Classic 匯出的完整白板 JSON。
@@ -10,4 +10,4 @@
 
 作者在已綁定 Drive 的 Classic 白板開啟 Drive 面板，可複製 `view.html?file=FILE_ID`。本機白板不顯示此按鈕。連結只指向 Drive 已同步版本；本機草稿不會出現在觀看者頁面。作者仍須在 Drive 將同事設為檢視者，且一般存取保持「受限制」。
 
-目前**跨帳號指定檔案授權仍未完成**：`drive.file` 需要觀看者透過 Google Picker 選取授權檔案，而 `assets/drive-viewer-config.js` 的 Picker API key 仍為空。Cloud 管理員需啟用 Picker API，建立限制來源與 API 的瀏覽器 key，並確認正式頁的 OAuth origin、Audience 與公司 IT 政策。A／B／C 真實帳號測試尚未進行。不得將 mock 測試當成真正的分享驗收。不要把本機 JSON 上傳到未授權服務，或把唯讀 UI 當成存取控制；實際讀取由 Google Drive 權限決定。
+若 Google 已登入且帳號能在 Drive 開啟檔案，但 Juice 顯示「無法讀取指定檔案」，按「授權指定檔案」，在 Google Picker 確認此連結指向的同一份檔案；不需授權整個 Drive。Picker API 已在同一 Google Cloud 專案啟用，瀏覽器 API key 限制為 Juice 正式來源與 `docs.google.com`，僅允許 Google Picker API、Google Drive API。測試檔的 B 可讀、C 不可讀及同步更新由使用者實測；另一份既有白板的 Picker 授權仍需實機驗證。不要把 mock 測試當成真正的分享驗收。不要把本機 JSON 上傳到未授權服務，或把唯讀 UI 當成存取控制；實際讀取由 Google Drive 權限決定。

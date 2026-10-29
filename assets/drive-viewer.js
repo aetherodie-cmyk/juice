@@ -145,7 +145,7 @@
     gapi.load('picker', {callback:() => {
       if (currentSession !== session || !token || !window.google?.picker) return;
       const picker = new google.picker.PickerBuilder()
-        .addView(new google.picker.DocsView(google.picker.ViewId.DOCS).setMode(google.picker.DocsViewMode.LIST))
+        .addView(new google.picker.DocsView(google.picker.ViewId.DOCS).setMode(google.picker.DocsViewMode.LIST).setFileIds(fileId))
         .setOAuthToken(token.access_token).setDeveloperKey(apiKey).setAppId(projectNumber).setOrigin(location.origin)
         .setCallback(result => {
           if (currentSession !== session || result.action !== google.picker.Action.PICKED) return;

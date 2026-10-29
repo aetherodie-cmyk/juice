@@ -66,7 +66,16 @@ test('invalid JSON never replaces the displayed board', async ({page}) => {
 
 async function mockCloud(page) {
   const cloud = {version:1,body:JSON.stringify(board),allowed:true,networkError:false,requests:[],account:'viewer@example.test'};
-  await page.route('https://accounts.google.com/gsi/client', route => route.fulfill({contentType:'application/javascript',body:'window.google={accounts:{oauth2:{initTokenClient:options=>({requestAccessToken:()=>options.callback({access_token:"test-token",expires_in:3600})})}}};'}));
+  await page.route('https://accounts.google.com/gsi/client', route => route.fulfill({contentType:'application/javascript',body:`
+    window.google={
+      accounts:{oauth2:{initTokenClient:options=>({requestAccessToken:()=>options.callback({access_token:'test-token',expires_in:3600})})}},
+      picker:{
+        ViewId:{DOCS:'docs'},DocsViewMode:{LIST:'list'},Action:{PICKED:'picked'},
+        DocsView:class{setMode(){return this;}setFileIds(fileIds){window.pickerFileIds=fileIds;return this;}},
+        PickerBuilder:class{addView(){return this;}setOAuthToken(){return this;}setDeveloperKey(){return this;}setAppId(){return this;}setOrigin(){return this;}setCallback(callback){window.pickerSelect=callback;return this;}build(){return{setVisible:()=>{window.pickerVisible=true;}};}}
+      }
+    };
+  `}));
   await page.route('https://apis.google.com/js/api.js', route => route.fulfill({contentType:'application/javascript',body:'window.gapi={load:(_name,options)=>options.callback()};'}));
   await page.route('https://www.googleapis.com/**', route => {
     const request = route.request(), url = new URL(request.url());
@@ -105,7 +114,7 @@ test('fixed Drive link is read-only and updates in place without losing view', a
   await expect(page.locator('.card')).toHaveCount(0);
 });
 
-test('permission denial never displays cloud content and requires file authorization', async ({page}) => {
+test('permission denial requires Picker authorization for the exact file', async ({page}) => {
   const cloud = await mockCloud(page); cloud.allowed = false;
   await page.goto('/view.html?file=testfile123456');
   await page.locator('#viewerLogin').click();
@@ -113,7 +122,14 @@ test('permission denial never displays cloud content and requires file authoriza
   await expect(page.locator('#viewerPicker')).toBeVisible();
   await expect(page.locator('.card')).toHaveCount(0);
   await page.locator('#viewerPicker').click();
-  await expect(page.locator('#viewerStatus')).toContainText('尚未設定 Google Picker API key');
+  await expect.poll(() => page.evaluate(() => window.pickerVisible)).toBe(true);
+  expect(await page.evaluate(() => window.pickerFileIds)).toBe('testfile123456');
+  await page.evaluate(() => window.pickerSelect({action:'picked',docs:[{id:'differentfile123'}]}));
+  await expect(page.locator('#viewerStatus')).toContainText('請在 Picker 中選取此連結對應的 Drive 檔案');
+  await expect(page.locator('.card')).toHaveCount(0);
+  cloud.allowed = true;
+  await page.evaluate(() => window.pickerSelect({action:'picked',docs:[{id:'testfile123456'}]}));
+  await expect(page.locator('.card')).toHaveCount(2);
   expect(cloud.requests.every(request => request.method === 'GET')).toBe(true);
 });
 
